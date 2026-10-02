@@ -3,7 +3,7 @@ MUT.page(async () => {
   const { esc, fmtDate, fmtTime, badge, qs } = MUT;
   const ctx = await TripCtx.load();
   const { trip, stops, seg, board, alight } = ctx;
-  document.title = `รอบ ${trip.trip_id} · MUT Shuttle`;
+  document.title = `รอบ ${trip.trip_id} · BusBuddy`;
   document.getElementById('back-link').href = '/search' + qs({ board, alight, date: trip.trip_date });
 
   const b = seg.board && seg.board.stop_order;

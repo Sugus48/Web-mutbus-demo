@@ -164,7 +164,7 @@
     const base = location.pathname.replace(/\.html$/, '');
     const q = MUT.params();
     const lk = needsLookups(cfg) ? await loadLookups() : {};
-    document.title = `${cfg.title} · MUT Shuttle`;
+    document.title = `${cfg.title} · BusBuddy`;
 
     if (q.new || q.edit) await showForm(q.edit || null);
     else await showList();
@@ -244,7 +244,7 @@
       back.insertAdjacentText('beforeend', cfg.title);
       document.getElementById('form-cancel').href = base;
       document.getElementById('form-title').textContent = `${isNew ? 'เพิ่ม' : 'แก้ไข'}${cfg.title}${isNew ? '' : ` ${id}`}`;
-      document.title = `${isNew ? 'เพิ่ม' : 'แก้ไข'}${cfg.title} · MUT Shuttle`;
+      document.title = `${isNew ? 'เพิ่ม' : 'แก้ไข'}${cfg.title} · BusBuddy`;
 
       document.getElementById('form-fields').innerHTML = `
         <div class="field"><label>รหัส</label><input class="input mono" value="${esc(isNew ? 'สร้างอัตโนมัติ' : id)}" readonly></div>

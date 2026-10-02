@@ -169,7 +169,7 @@ MUT.page(async () => {
   const result = report.build(sets, p);
 
   // หัวข้อ เมนู ตัวกรอง
-  document.title = `รายงาน ${id} · MUT Shuttle`;
+  document.title = `รายงาน ${id} · BusBuddy`;
   document.getElementById('report-title').textContent = `รายงาน ${id}: ${report.title}`;
   document.getElementById('report-menu').innerHTML = Object.entries(REPORTS).map(([k, r]) =>
     `<a class="chip" href="/admin/reports?r=${k}" ${Number(k) === id ? 'aria-current="page"' : ''}>${k}. ${esc(r.title)}</a>`).join('');

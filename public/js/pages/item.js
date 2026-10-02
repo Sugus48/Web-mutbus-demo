@@ -4,7 +4,7 @@ MUT.page(async () => {
   const [[item]] = await MUT.api('item', { item: MUT.param('id') });
   const isNew = !!MUT.param('new');
   const cancelled = item.status === 'ยกเลิก';
-  document.title = `รายการจอง ${item.booking_item_id} · MUT Shuttle`;
+  document.title = `รายการจอง ${item.booking_item_id} · BusBuddy`;
   const qr = await QRCode.toDataURL(item.qr_code, { width: 440, margin: 1 });
 
   document.getElementById('item-view').innerHTML = `

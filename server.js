@@ -153,7 +153,7 @@ function ensureTrips() {
 
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
-  console.log(`MUT Shuttle running at http://localhost:${port}`);
+  console.log(`BusBuddy running at http://localhost:${port}`);
   console.log(`ฐานข้อมูล: ${db.name} @ ${process.env.DB_HOST || '127.0.0.1'}`);
   ensureTrips();
   setInterval(ensureTrips, 60 * 60 * 1000).unref();

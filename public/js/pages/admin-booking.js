@@ -3,7 +3,7 @@
 MUT.page(async ({ can }) => {
   const { esc, fmtDate, fmtTime, fmtDateTime, badge } = MUT;
   const [[b], items] = await MUT.api('bookings_get', { id: MUT.param('id') });
-  document.title = `การจอง ${b.booking_id} · MUT Shuttle`;
+  document.title = `การจอง ${b.booking_id} · BusBuddy`;
   const editable = can('SC02', 'edit');
   const qrs = await Promise.all(items.map((i) => QRCode.toDataURL(i.qr_code, { width: 240, margin: 1 })));
   const STATUSES = ['ยืนยัน', 'ยกเลิก', 'No Show'];

@@ -3,7 +3,7 @@ MUT.page(async () => {
   const { esc, fmtDate, fmtTime, badge, icon } = MUT;
   const id = MUT.param('id');
   const [[trip], [counts], rows] = await MUT.api('driver_trip', { trip: id });
-  document.title = `รอบ ${trip.trip_id} · MUT Shuttle`;
+  document.title = `รอบ ${trip.trip_id} · BusBuddy`;
   document.getElementById('back-link').href = trip.trip_date >= trip.today ? '/driver/' : '/driver/history';
 
   // จัดกลุ่มผู้โดยสารตามจุดจอด

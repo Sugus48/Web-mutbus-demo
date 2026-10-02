@@ -1,4 +1,4 @@
-// MUT Shuttle — โค้ดกลางของหน้าเว็บทุกหน้า
+// BusBuddy — โค้ดกลางของหน้าเว็บทุกหน้า
 // - api(): เรียกหลังบ้าน (stored procedure api_*) ผ่าน server.js
 // - ฟังก์ชันจัดรูปแบบ, Badge, ไอคอน, Flash message, กล่องยืนยัน
 // - วาง layout (แถบบน/เมนูล่าง/เมนูข้างหลังบ้าน) ตาม <body data-layout="user|driver|admin|auth">
@@ -284,7 +284,7 @@
 
   function layoutUser(me) {
     const header = `<header class="topbar"><div class="topbar-inner">
-        <a class="brand" href="/">${LOGO} MUT Shuttle</a><span class="spacer"></span>
+        <a class="brand" href="/">${LOGO} BusBuddy</a><span class="spacer"></span>
         ${me.is_driver ? '<a class="switch-link" href="/driver/">งานคนขับ</a>' : ''}
         ${me.has_admin ? '<a class="switch-link" href="/admin/">หลังบ้าน</a>' : ''}
       </div></header>`;
@@ -301,7 +301,7 @@
 
   function layoutDriver(me) {
     const header = `<header class="topbar"><div class="topbar-inner">
-        <a class="brand" href="/driver/">${LOGO} MUT Shuttle · คนขับ</a><span class="spacer"></span>
+        <a class="brand" href="/driver/">${LOGO} BusBuddy · คนขับ</a><span class="spacer"></span>
         ${me.has_admin ? '<a class="switch-link" href="/admin/">หลังบ้าน</a>' : ''}
       </div></header>`;
     const nav = tabbar('เมนูคนขับ', [
@@ -330,7 +330,7 @@
     root.innerHTML = `
       <aside class="sidebar" id="admin-sidebar" aria-label="เมนูหลังบ้าน">
         <div class="sidebar-head">
-          <a class="brand" href="/admin/">${LOGO} MUT Shuttle</a>
+          <a class="brand" href="/admin/">${LOGO} BusBuddy</a>
           <button class="sidebar-close" type="button" aria-label="ปิดเมนู">${icon('close')}</button>
         </div>
         <a class="nav" href="/admin/" ${current(path === '/admin/')}>Dashboard</a>
@@ -371,7 +371,7 @@
     const wrap = document.createElement('div');
     wrap.className = 'auth-wrap';
     wrap.innerHTML = `<div class="auth-card">
-        <div class="auth-brand"><div class="logo"><img src="/img/logo.png" alt="" width="100" height="100"></div><h1>MUT Shuttle</h1><p>ระบบจองรถรับส่งและบริหารการเดินรถ</p></div>
+        <div class="auth-brand"><div class="logo"><img src="/img/logo.png" alt="" width="100" height="100"></div><h1>BusBuddy</h1><p>ระบบจองรถรับส่งและบริหารการเดินรถ</p></div>
       </div>`;
     main.replaceWith(wrap);
     main.classList.add('card');
@@ -399,7 +399,7 @@
           <a class="btn" href="javascript:history.back()">ย้อนกลับ</a>
           <a class="btn btn-primary" href="/">กลับหน้าหลัก</a>
         </div></div>`;
-    document.title = `${title} · MUT Shuttle`;
+    document.title = `${title} · BusBuddy`;
   }
 
   // ---------- เริ่มหน้า ----------

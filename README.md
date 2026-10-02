@@ -1,4 +1,4 @@
-# MUT Shuttle (เวอร์ชัน HTML/CSS/JS + SQL)
+# BusBuddy — MUT Shuttle (เวอร์ชัน HTML/CSS/JS + SQL)
 
 ระบบจองรถรับส่งและบริหารการเดินรถ แปลงจากเวอร์ชัน Node.js + EJS เดิม
 

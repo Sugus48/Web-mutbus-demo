@@ -1,7 +1,7 @@
 {
   "name": "web-mutbus-demo",
   "version": "2.0.0",
-  "description": "ระบบจองรถรับส่ง MUT Shuttle — หน้าเว็บ HTML/CSS/JS + หลังบ้าน SQL/PL-SQL (stored procedures) บน Oracle หรือ MySQL",
+  "description": "ระบบจองรถรับส่ง BusBuddy (MUT Shuttle) — หน้าเว็บ HTML/CSS/JS + หลังบ้าน SQL/PL-SQL (stored procedures) บน Oracle หรือ MySQL",
   "main": "server.js",
   "private": true,
   "scripts": {

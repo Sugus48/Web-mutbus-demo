@@ -2,7 +2,7 @@
 MUT.page(async ({ can }) => {
   const { esc } = MUT;
   const [[route], stops] = await MUT.api('routes_get', { id: MUT.param('id') });
-  document.title = `เส้นทาง ${route.route_name} · MUT Shuttle`;
+  document.title = `เส้นทาง ${route.route_name} · BusBuddy`;
   document.getElementById('route-view').innerHTML = `
     <div class="page-bar">
       <div>

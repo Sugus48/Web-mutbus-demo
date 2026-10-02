@@ -7,7 +7,7 @@ MUT.page(async ({ me }) => {
   const v = trip || { trip_date: MUT.param('date') || me.today, route_id: MUT.param('route') };
   const form = document.getElementById('trip-form');
   document.getElementById('form-title').textContent = isNew ? 'เพิ่มรอบการเดินรถ' : `แก้ไขรอบ ${id}`;
-  document.title = `${isNew ? 'เพิ่ม' : 'แก้ไข'}รอบการเดินรถ · MUT Shuttle`;
+  document.title = `${isNew ? 'เพิ่ม' : 'แก้ไข'}รอบการเดินรถ · BusBuddy`;
   if (trip && Number(trip.booked_seats) > 0) {
     document.getElementById('booked-note').innerHTML = `<div class="alert alert-info">รอบนี้มีการจองแล้ว ${esc(trip.booked_seats)} ที่นั่ง</div>`;
   }

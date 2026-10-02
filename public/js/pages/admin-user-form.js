@@ -9,7 +9,7 @@ MUT.page(async ({ can }) => {
 
   const form = document.getElementById('user-form');
   document.getElementById('form-title').textContent = isNew ? 'เพิ่มผู้ใช้งาน' : `แก้ไขผู้ใช้งาน ${id}`;
-  document.title = `${isNew ? 'เพิ่ม' : 'แก้ไข'}ผู้ใช้งาน · MUT Shuttle`;
+  document.title = `${isNew ? 'เพิ่ม' : 'แก้ไข'}ผู้ใช้งาน · BusBuddy`;
   if (!isNew) document.getElementById('password-label').textContent = 'Password (เว้นว่างถ้าไม่เปลี่ยน)';
   else form.password.required = true;
   for (const k of ['name', 'email', 'username', 'phone']) form[k].value = v[k] || '';
