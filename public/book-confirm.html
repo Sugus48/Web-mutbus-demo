@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ยืนยันการจอง · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="user">
+<main class="app-main" id="main">
+<div class="page-head">
+  <div class="muted small">ขั้นตอน 2 / 2</div>
+  <h1>ยืนยันการจอง</h1>
+</div>
+
+<div class="card">
+  <h2 class="card-title">รายละเอียดการจอง</h2>
+  <dl class="summary" id="summary"><dt>กำลังโหลด...</dt><dd></dd></dl>
+</div>
+
+<form class="mt-4" id="confirm-form">
+  <div data-form-error></div>
+  <div class="btn-row">
+    <a class="btn grow" id="back-btn" href="/search">ย้อนกลับ</a>
+    <button class="btn btn-primary grow" type="submit" data-loading="กำลังจอง..." disabled>ยืนยันการจอง</button>
+  </div>
+</form>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/trip-common.js"></script>
+<script src="/js/pages/book-confirm.js"></script>
+</body>
+</html>

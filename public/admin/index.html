@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="admin">
+<main class="admin-content" id="main">
+<div class="page-bar">
+  <div>
+    <h1>Dashboard</h1>
+    <div class="muted" id="today-info"></div>
+  </div>
+</div>
+
+<div class="kpis" id="kpis"></div>
+
+<section class="section">
+  <div class="row-between mb-2">
+    <h2 class="section-title mb-0">ตารางรอบวันนี้</h2>
+    <a class="btn btn-sm btn-ghost" id="trips-link" href="/admin/trips" hidden>จัดการรอบ</a>
+  </div>
+  <div id="today-trips"></div>
+</section>
+
+<section class="section">
+  <div class="row-between mb-2">
+    <h2 class="section-title mb-0">รายการจองล่าสุด</h2>
+    <a class="btn btn-sm btn-ghost" id="bookings-link" href="/admin/bookings" hidden>ดูทั้งหมด</a>
+  </div>
+  <div id="latest"></div>
+</section>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/admin-dashboard.js"></script>
+</body>
+</html>

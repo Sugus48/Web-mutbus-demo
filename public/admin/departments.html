@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แผนก · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="admin">
+<main class="admin-content" id="main">
+<section id="list-view" data-resource="departments" hidden>
+  <div class="page-bar">
+    <div>
+      <h1 data-title></h1>
+      <div class="muted small" data-note></div>
+    </div>
+    <a class="btn btn-primary" id="add-btn" hidden></a>
+  </div>
+  <form class="filters" id="filter-form" role="search"></form>
+  <div id="rows"></div>
+</section>
+
+<section id="form-view" hidden>
+  <a class="back-link" id="form-back" href="" data-icon="back"></a>
+  <div class="page-bar"><h1 id="form-title"></h1></div>
+  <form class="card form-card" id="edit-form" novalidate>
+    <div data-form-error></div>
+    <div id="form-fields"></div>
+    <div class="btn-row end">
+      <a class="btn" id="form-cancel" href="">ยกเลิก</a>
+      <button class="btn btn-primary" type="submit" data-loading="กำลังบันทึก...">บันทึก</button>
+    </div>
+  </form>
+</section>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/admin-crud.js"></script>
+</body>
+</html>

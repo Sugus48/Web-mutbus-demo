@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สิทธิ์ตามตำแหน่ง · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="admin">
+<main class="admin-content" id="main">
+<div class="page-bar">
+  <div>
+    <h1>สิทธิ์ตามตำแหน่ง</h1>
+    <div class="muted small">เข้าถึง = แสดงเมนู/ดูหน้านั้นได้ · เพิ่ม / แก้ไข / ลบ = แสดงปุ่มในหน้านั้น</div>
+  </div>
+</div>
+
+<form class="filters" id="position-form">
+  <div class="field wide">
+    <label for="position">ตำแหน่ง</label>
+    <select class="input" id="position" name="position"></select>
+  </div>
+</form>
+
+<form id="matrix-form">
+  <div data-form-error></div>
+  <div class="table-wrap">
+    <table class="table matrix">
+      <caption class="sr-only" id="matrix-caption"></caption>
+      <thead>
+        <tr><th scope="col">หน้าจอ</th><th scope="col">เข้าถึง</th><th scope="col">เพิ่ม</th><th scope="col">แก้ไข</th><th scope="col">ลบ</th></tr>
+      </thead>
+      <tbody id="matrix"></tbody>
+    </table>
+  </div>
+  <div class="btn-row end mt-4" id="matrix-actions" hidden>
+    <a class="btn" id="reset-btn" href="/admin/permissions">คืนค่าเดิม</a>
+    <button class="btn btn-primary" type="submit" data-loading="กำลังบันทึก...">บันทึกสิทธิ์</button>
+  </div>
+  <p class="muted small mt-2" id="readonly-note" hidden>คุณดูได้อย่างเดียว ไม่มีสิทธิ์แก้ไข</p>
+</form>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/admin-permissions.js"></script>
+</body>
+</html>

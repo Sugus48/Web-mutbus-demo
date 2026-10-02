@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เลือกจำนวนที่นั่ง · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="user">
+<main class="app-main" id="main">
+<a class="back-link" id="back-link" href="/search" data-icon="back">รายละเอียดรอบ</a>
+
+<div class="page-head">
+  <div class="muted small">ขั้นตอน 1 / 2</div>
+  <h1>เลือกจำนวนที่นั่ง</h1>
+</div>
+
+<div id="trip-summary"><div class="card empty">กำลังโหลด...</div></div>
+
+<form class="card mt-4" id="seats-form" hidden>
+  <label class="label" for="seats">จำนวนที่นั่ง</label>
+  <div class="stepper">
+    <button class="btn" type="button" data-step="-1" aria-label="ลดจำนวนที่นั่ง">−</button>
+    <input class="input center" style="max-width:96px;font-size:1.8rem;font-weight:700" type="number" id="seats" name="seats"
+           value="1" min="1" max="4" required aria-describedby="seats-hint">
+    <button class="btn" type="button" data-step="1" aria-label="เพิ่มจำนวนที่นั่ง">+</button>
+  </div>
+  <p class="center muted small" id="seats-hint"></p>
+  <button class="btn btn-primary btn-block" type="submit">ถัดไป</button>
+</form>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/trip-common.js"></script>
+<script src="/js/pages/book.js"></script>
+</body>
+</html>

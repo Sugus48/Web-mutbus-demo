@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ผู้ใช้งาน · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="admin">
+<main class="admin-content" id="main">
+<a class="back-link" href="/admin/users" data-icon="back">ผู้ใช้งาน / พนักงาน</a>
+<div class="page-bar"><h1 id="form-title">เพิ่มผู้ใช้งาน</h1></div>
+
+<form class="card form-card" id="user-form" novalidate>
+  <div data-form-error></div>
+  <div class="form-grid">
+    <div class="field">
+      <label for="name">ชื่อ</label>
+      <input class="input" id="name" name="name" autocomplete="off" required>
+    </div>
+    <div class="field">
+      <label for="email">Email</label>
+      <input class="input" id="email" name="email" type="email" autocomplete="off" required>
+    </div>
+    <div class="field">
+      <label for="username">Username</label>
+      <input class="input" id="username" name="username" autocomplete="off" required>
+    </div>
+    <div class="field">
+      <label for="password" id="password-label">Password</label>
+      <div class="input-group">
+        <input class="input" id="password" name="password" type="password" autocomplete="new-password">
+        <button class="btn btn-sm btn-ghost" type="button" data-toggle-password="password" aria-pressed="false">แสดง</button>
+      </div>
+    </div>
+    <div class="field">
+      <label for="department_id">แผนก</label>
+      <select class="input" id="department_id" name="department_id" required></select>
+    </div>
+  </div>
+
+  <hr class="divider">
+  <div class="field">
+    <label class="switch"><input type="checkbox" name="is_employee" value="1" id="is_employee"> เป็นพนักงาน</label>
+    <span class="hint">พนักงานมีเบอร์โทรและตำแหน่ง — สิทธิ์การใช้งานหลังบ้าน/งานคนขับกำหนดตามตำแหน่ง</span>
+  </div>
+  <div class="form-grid" id="employee-fields">
+    <div class="field">
+      <label for="phone">เบอร์โทร</label>
+      <input class="input" id="phone" name="phone" type="tel">
+    </div>
+    <div class="field">
+      <label for="position_id">ตำแหน่ง</label>
+      <select class="input" id="position_id" name="position_id"></select>
+    </div>
+  </div>
+
+  <div class="btn-row end">
+    <a class="btn" href="/admin/users">ยกเลิก</a>
+    <button class="btn btn-primary" type="submit" data-loading="กำลังบันทึก...">บันทึก</button>
+  </div>
+</form>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/admin-user-form.js"></script>
+</body>
+</html>

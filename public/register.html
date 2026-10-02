@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สมัครสมาชิก · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="auth">
+<main class="" id="main">
+<h2>สมัครสมาชิก</h2>
+<form id="register-form" novalidate>
+  <div data-form-error></div>
+  <div class="field">
+    <label for="name">ชื่อ-นามสกุล</label>
+    <input class="input" id="name" name="name" autocomplete="name" maxlength="100" required autofocus>
+  </div>
+  <div class="field">
+    <label for="email">Email</label>
+    <input class="input" id="email" name="email" type="email" autocomplete="email" maxlength="150" required>
+  </div>
+  <div class="field">
+    <label for="username">Username</label>
+    <input class="input" id="username" name="username" autocomplete="username" maxlength="50" required aria-describedby="username-hint">
+    <span class="hint" id="username-hint">a-z, 0-9, _ . - ความยาว 3–50 ตัวอักษร</span>
+  </div>
+  <div class="field">
+    <label for="password">Password</label>
+    <input class="input" id="password" name="password" type="password" autocomplete="new-password" required aria-describedby="password-hint">
+    <span class="hint" id="password-hint">อย่างน้อย 4 ตัวอักษร</span>
+  </div>
+  <div class="field">
+    <label for="confirm">ยืนยัน Password</label>
+    <input class="input" id="confirm" name="confirm" type="password" autocomplete="new-password" required>
+  </div>
+  <button class="btn btn-primary btn-block" type="submit" data-loading="กำลังสมัครสมาชิก...">สมัครสมาชิก</button>
+</form>
+<p class="muted" style="text-align:center; margin-bottom:0">มีบัญชีอยู่แล้ว? <a href="/login">เข้าสู่ระบบ</a></p>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/register.js"></script>
+</body>
+</html>

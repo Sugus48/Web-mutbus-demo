@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>หน้าหลัก · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="user">
+<main class="app-main" id="main">
+<section class="hero">
+  <h1>สวัสดี คุณ<span id="user-name"></span></h1>
+  <p>จองรถรับส่งล่วงหน้าได้อย่างน้อย 20 นาทีก่อนรถถึงจุดขึ้น</p>
+</section>
+
+<h2 class="section-title">การเดินทางถัดไป</h2>
+<div id="next-trip"><div class="card empty">กำลังโหลด...</div></div>
+
+<div class="card mt-4 row-between">
+  <div>
+    <div class="muted small">รายการจองที่กำลังจะถึง</div>
+    <div class="stat-inline"><b id="upcoming-count">-</b> รายการ</div>
+  </div>
+  <a class="btn btn-sm" href="/my">ดูทั้งหมด</a>
+</div>
+
+<div class="quick mt-4">
+  <a href="/search" data-icon="search">จองรถ</a>
+  <a href="/my" data-icon="ticket">การจองของฉัน</a>
+</div>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/home.js"></script>
+</body>
+</html>

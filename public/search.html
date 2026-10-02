@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ค้นหารอบรถ · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="user">
+<main class="app-main" id="main">
+<div class="page-head">
+  <h1>จองรถ</h1>
+  <p class="muted mb-0">เลือกจุดขึ้น จุดลง และวันที่เดินทาง</p>
+</div>
+
+<form class="card" id="search-form">
+  <div class="field">
+    <label for="board">จุดขึ้น</label>
+    <select class="input" id="board" name="board" required>
+      <option value="">— เลือกจุดขึ้น —</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="alight">จุดลง</label>
+    <select class="input" id="alight" name="alight" required aria-describedby="alight-hint">
+      <option value="">— เลือกจุดลง —</option>
+    </select>
+    <span class="hint" id="alight-hint">แสดงเฉพาะจุดที่อยู่หลังจุดขึ้นในเส้นทาง</span>
+  </div>
+  <div class="field">
+    <label for="date">วันที่เดินรถ</label>
+    <input class="input" type="date" id="date" name="date" required>
+  </div>
+  <button class="btn btn-primary btn-block" type="submit" data-loading="กำลังค้นหา..." data-icon="search">ค้นหา</button>
+</form>
+
+<div id="results" aria-live="polite"></div>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/search.js"></script>
+</body>
+</html>

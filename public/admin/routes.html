@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เส้นทาง · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="admin">
+<main class="admin-content" id="main">
+<div class="page-bar">
+  <h1>เส้นทาง</h1>
+  <a class="btn btn-primary" id="add-btn" href="/admin/route-form" hidden>+ เพิ่มเส้นทาง</a>
+</div>
+
+<form class="filters" id="filter-form" role="search">
+  <div class="field wide">
+    <label for="q">ค้นหา</label>
+    <input class="input" id="q" name="q" placeholder="รหัส หรือชื่อเส้นทาง">
+  </div>
+  <div class="btn-row"><button class="btn" type="submit">ค้นหา</button><a class="btn btn-ghost" href="/admin/routes">ล้าง</a></div>
+</form>
+
+<div id="rows"><div class="card empty">กำลังโหลด...</div></div>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/admin-routes.js"></script>
+</body>
+</html>

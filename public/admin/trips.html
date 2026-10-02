@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>รอบการเดินรถ · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="admin">
+<main class="admin-content" id="main">
+<div class="page-bar">
+  <h1>รอบการเดินรถ</h1>
+  <a class="btn btn-primary" id="add-btn" href="/admin/trip-form" hidden>+ เพิ่มรอบ</a>
+</div>
+
+<form class="filters" id="filter-form">
+  <div class="field">
+    <label for="date">วันที่</label>
+    <input class="input" type="date" id="date" name="date">
+  </div>
+  <div class="field">
+    <label for="route">เส้นทาง</label>
+    <select class="input" id="route" name="route"></select>
+  </div>
+  <div class="field">
+    <label for="driver">คนขับ</label>
+    <select class="input" id="driver" name="driver"></select>
+  </div>
+  <div class="field">
+    <label for="vehicle">รถ</label>
+    <select class="input" id="vehicle" name="vehicle"></select>
+  </div>
+  <div class="field">
+    <label for="status">สถานะรอบ</label>
+    <select class="input" id="status" name="status">
+      <option value="">ทั้งหมด</option>
+      <option>เปิด</option><option>กำลังเดินทาง</option><option>เสร็จสิ้น</option><option>ยกเลิก</option>
+    </select>
+  </div>
+  <div class="btn-row">
+    <button class="btn" type="submit">ค้นหา</button>
+    <a class="btn btn-ghost" href="/admin/trips?date=">ทุกวัน</a>
+  </div>
+</form>
+
+<div id="rows"><div class="card empty">กำลังโหลด...</div></div>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/admin-trips.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>โปรไฟล์ · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="user">
+<main class="app-main" id="main">
+<div class="page-head"><h1>โปรไฟล์</h1></div>
+
+<div class="card">
+  <dl class="dl" id="profile"><dt>กำลังโหลด...</dt><dd></dd></dl>
+</div>
+
+<form class="card" id="password-form" novalidate>
+  <h2 class="card-title">เปลี่ยน password</h2>
+  <div class="field">
+    <label for="pw-current">password ปัจจุบัน</label>
+    <input class="input" type="password" id="pw-current" name="current" autocomplete="current-password" required>
+  </div>
+  <div class="field">
+    <label for="pw-password">password ใหม่</label>
+    <input class="input" type="password" id="pw-password" name="password" autocomplete="new-password" required>
+  </div>
+  <div class="field">
+    <label for="pw-confirm">ยืนยัน password ใหม่</label>
+    <input class="input" type="password" id="pw-confirm" name="confirm" autocomplete="new-password" required>
+  </div>
+  <button class="btn btn-primary" type="submit" data-loading="กำลังบันทึก...">บันทึก password</button>
+</form>
+
+<button class="btn btn-block mt-4" type="button" data-logout data-icon="logout">ออกจากระบบ</button>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/profile.js"></script>
+</body>
+</html>

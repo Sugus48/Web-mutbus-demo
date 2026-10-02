@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>รายงาน · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="admin">
+<main class="admin-content" id="main">
+<div class="page-bar">
+  <div>
+    <h1>รายงาน</h1>
+    <div class="muted small" id="report-title"></div>
+  </div>
+  <button class="btn" type="button" id="csv-btn" disabled>Export CSV</button>
+</div>
+
+<nav class="chips" id="report-menu" aria-label="เลือกรายงาน"></nav>
+
+<form class="filters" id="filter-form">
+  <input type="hidden" name="r" id="r">
+  <div class="field" data-filter="year">
+    <label for="year">ปี (พ.ศ.)</label>
+    <input class="input" type="number" id="year" name="year" min="2543" max="2643">
+  </div>
+  <div class="field" data-filter="range">
+    <label for="from">วันที่เริ่มต้น</label>
+    <input class="input" type="date" id="from" name="from">
+  </div>
+  <div class="field" data-filter="range">
+    <label for="to">วันที่สิ้นสุด</label>
+    <input class="input" type="date" id="to" name="to">
+  </div>
+  <div class="btn-row"><button class="btn btn-primary" type="submit">แสดงรายงาน</button></div>
+</form>
+
+<p class="muted small" id="report-note"></p>
+<div class="kpis" id="cards"></div>
+<div id="charts"></div>
+<div class="table-wrap">
+  <table class="table" id="report-table"></table>
+</div>
+</main>
+<script src="/js/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="/js/pages/admin-reports.js"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>รอบการเดินรถ · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="admin">
+<main class="admin-content" id="main">
+<a class="back-link" href="/admin/trips" data-icon="back">รอบการเดินรถ</a>
+<div class="page-bar"><h1 id="form-title">เพิ่มรอบการเดินรถ</h1></div>
+<div id="booked-note"></div>
+
+<form class="card form-card" id="trip-form" novalidate>
+  <div data-form-error></div>
+  <div class="form-grid">
+    <div class="field">
+      <label for="route_id">เส้นทาง</label>
+      <select class="input" id="route_id" name="route_id" required></select>
+    </div>
+    <div class="field">
+      <label for="trip_date">วันที่เดินรถ</label>
+      <input class="input" type="date" id="trip_date" name="trip_date" required>
+    </div>
+    <div class="field">
+      <label for="depart_time">เวลาออก</label>
+      <input class="input" type="time" id="depart_time" name="depart_time" required>
+      <span class="hint" id="end-hint"></span>
+    </div>
+    <div class="field">
+      <label for="vehicle_id">รถ (เฉพาะพร้อมใช้งาน)</label>
+      <select class="input" id="vehicle_id" name="vehicle_id" required></select>
+    </div>
+    <div class="field">
+      <label for="seat_count">จำนวนที่นั่ง</label>
+      <input class="input" id="seat_count" value="" readonly aria-describedby="seat-hint">
+      <span class="hint" id="seat-hint">ดึงจากประเภทรถอัตโนมัติ</span>
+    </div>
+    <div class="field">
+      <label for="driver_id">คนขับ</label>
+      <select class="input" id="driver_id" name="driver_id" required></select>
+    </div>
+    <div class="field" id="status-field" hidden>
+      <label for="trip_status">สถานะรอบ</label>
+      <select class="input" id="trip_status" name="status">
+        <option>เปิด</option><option>กำลังเดินทาง</option><option>เสร็จสิ้น</option><option>ยกเลิก</option>
+      </select>
+    </div>
+  </div>
+  <div class="btn-row end">
+    <a class="btn" href="/admin/trips">ยกเลิก</a>
+    <button class="btn btn-primary" type="submit" data-loading="กำลังบันทึก...">บันทึก</button>
+  </div>
+</form>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/admin-trip-form.js"></script>
+</body>
+</html>

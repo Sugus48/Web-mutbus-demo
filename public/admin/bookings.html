@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>การจอง · MUT Shuttle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-layout="admin">
+<main class="admin-content" id="main">
+<div class="page-bar">
+  <div>
+    <h1>การจอง</h1>
+    <div class="muted small" id="trip-filter-note"></div>
+  </div>
+</div>
+
+<form class="filters" id="filter-form" role="search">
+  <input type="hidden" name="trip" id="trip">
+  <div class="field wide">
+    <label for="q">ค้นหา</label>
+    <input class="input" id="q" name="q" placeholder="รหัสการจอง, รายการจอง, ชื่อผู้จอง, QR">
+  </div>
+  <div class="field">
+    <label for="from">วันที่เดินรถ ตั้งแต่</label>
+    <input class="input" type="date" id="from" name="from">
+  </div>
+  <div class="field">
+    <label for="to">ถึง</label>
+    <input class="input" type="date" id="to" name="to">
+  </div>
+  <div class="field">
+    <label for="status">สถานะการจอง</label>
+    <select class="input" id="status" name="status">
+      <option value="">ทั้งหมด</option>
+      <option>ยืนยัน</option><option>Check-in แล้ว</option><option>ยกเลิก</option><option>No Show</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="route">เส้นทาง</label>
+    <select class="input" id="route" name="route"><option value="">ทั้งหมด</option></select>
+  </div>
+  <div class="btn-row"><button class="btn" type="submit">ค้นหา</button><a class="btn btn-ghost" href="/admin/bookings">ล้าง</a></div>
+</form>
+
+<div id="rows"><div class="card empty">กำลังโหลด...</div></div>
+</main>
+<script src="/js/app.js"></script>
+<script src="/js/pages/admin-bookings.js"></script>
+</body>
+</html>

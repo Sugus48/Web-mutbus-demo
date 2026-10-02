@@ -1,0 +1,24 @@
+{
+  "name": "web-mutbus-demo",
+  "version": "2.0.0",
+  "description": "ระบบจองรถรับส่ง MUT Shuttle — หน้าเว็บ HTML/CSS/JS + หลังบ้าน SQL/PL-SQL (stored procedures) บน Oracle หรือ MySQL",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "db:init": "node scripts/db-init.js",
+    "db:api": "node scripts/db-init.js --api-only"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^18.0.3",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "mysql2": "^3.24.4",
+    "oracledb": "^7.0.1"
+  }
+}
