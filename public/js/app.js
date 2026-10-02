@@ -272,6 +272,11 @@
   const path = location.pathname.replace(/\.html$/, '').replace(/\/index$/, '/');
   const current = (cond) => (cond ? 'aria-current="page"' : '');
 
+  // โลโก้ BusBuddy (public/img/) — ใส่ favicon ให้ทุกหน้าจากที่นี่ที่เดียว
+  const LOGO = '<img class="brand-logo" src="/img/logo-64.png" alt="" width="32" height="32">';
+  document.head.insertAdjacentHTML('beforeend',
+    '<link rel="icon" type="image/png" href="/img/favicon.png"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png">');
+
   function tabbar(label, tabs) {
     return `<nav class="tabbar" aria-label="${label}"><div class="tabbar-inner">${tabs.map((t) =>
       `<a href="${t.href}" ${current(t.match)}>${icon(t.icon)}<span>${t.label}</span></a>`).join('')}</div></nav>`;
@@ -279,7 +284,7 @@
 
   function layoutUser(me) {
     const header = `<header class="topbar"><div class="topbar-inner">
-        <a class="brand" href="/">${icon('bus')} MUT Shuttle</a><span class="spacer"></span>
+        <a class="brand" href="/">${LOGO} MUT Shuttle</a><span class="spacer"></span>
         ${me.is_driver ? '<a class="switch-link" href="/driver/">งานคนขับ</a>' : ''}
         ${me.has_admin ? '<a class="switch-link" href="/admin/">หลังบ้าน</a>' : ''}
       </div></header>`;
@@ -296,7 +301,7 @@
 
   function layoutDriver(me) {
     const header = `<header class="topbar"><div class="topbar-inner">
-        <a class="brand" href="/driver/">${icon('steering')} MUT Shuttle · คนขับ</a><span class="spacer"></span>
+        <a class="brand" href="/driver/">${LOGO} MUT Shuttle · คนขับ</a><span class="spacer"></span>
         ${me.has_admin ? '<a class="switch-link" href="/admin/">หลังบ้าน</a>' : ''}
       </div></header>`;
     const nav = tabbar('เมนูคนขับ', [
@@ -325,7 +330,7 @@
     root.innerHTML = `
       <aside class="sidebar" id="admin-sidebar" aria-label="เมนูหลังบ้าน">
         <div class="sidebar-head">
-          <a class="brand" href="/admin/">${icon('bus')} MUT Shuttle</a>
+          <a class="brand" href="/admin/">${LOGO} MUT Shuttle</a>
           <button class="sidebar-close" type="button" aria-label="ปิดเมนู">${icon('close')}</button>
         </div>
         <a class="nav" href="/admin/" ${current(path === '/admin/')}>Dashboard</a>
@@ -366,7 +371,7 @@
     const wrap = document.createElement('div');
     wrap.className = 'auth-wrap';
     wrap.innerHTML = `<div class="auth-card">
-        <div class="auth-brand"><div class="logo">${icon('bus')}</div><h1>MUT Shuttle</h1><p>ระบบจองรถรับส่งและบริหารการเดินรถ</p></div>
+        <div class="auth-brand"><div class="logo"><img src="/img/logo.png" alt="" width="100" height="100"></div><h1>MUT Shuttle</h1><p>ระบบจองรถรับส่งและบริหารการเดินรถ</p></div>
       </div>`;
     main.replaceWith(wrap);
     main.classList.add('card');
