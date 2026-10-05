@@ -13,10 +13,10 @@ MUT.page(async ({ hasScreen }) => {
     kpi('รถพร้อมใช้งาน', `${k.vehicles_ready}<span class="small muted"> / ${k.vehicles_total}</span>`),
   ].join('');
 
-  const tripsLink = document.getElementById('trips-link');
-  tripsLink.hidden = !hasScreen('SC06');
-  tripsLink.href = `/admin/trips?date=${k.today}`;
-  document.getElementById('bookings-link').hidden = !hasScreen('SC02');
+  // รอบวันนี้ / รายการจองล่าสุด แสดงเฉพาะผู้มีสิทธิ์หน้าจอนั้น (api_dashboard คืนชุดว่างให้ผู้ไม่มีสิทธิ์)
+  document.getElementById('trips-section').hidden = !hasScreen('SC06');
+  document.getElementById('latest-section').hidden = !hasScreen('SC02');
+  document.getElementById('trips-link').href = `/admin/trips?date=${k.today}`;
 
   document.getElementById('today-trips').innerHTML = !trips.length
     ? '<div class="card empty"><strong>วันนี้ยังไม่มีรอบการเดินรถ</strong></div>'

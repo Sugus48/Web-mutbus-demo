@@ -46,7 +46,9 @@ CREATE TABLE departments (
 CREATE TABLE positions (
   position_id   VARCHAR2(10 CHAR)  NOT NULL,
   position_name VARCHAR2(100 CHAR) NOT NULL,
-  CONSTRAINT pk_positions PRIMARY KEY (position_id)
+  department_id VARCHAR2(10 CHAR),                      -- แผนกของตำแหน่ง — NULL = ใช้ได้ทุกแผนก
+  CONSTRAINT pk_positions PRIMARY KEY (position_id),
+  CONSTRAINT fk_positions_department FOREIGN KEY (department_id) REFERENCES departments (department_id)
 );
 
 -- 6. หน้าจอ
@@ -640,8 +642,8 @@ INSERT INTO departments VALUES ('D002', 'ฝ่ายปฏิบัติกา
 -- D003 = ผู้ใช้บริการที่ Login มาจอง (ไม่ใช่พนักงาน)
 INSERT INTO departments VALUES ('D003', 'นักศึกษา');
 
-INSERT INTO positions VALUES ('P01', 'Admin');
-INSERT INTO positions VALUES ('P02', 'พนักงาน');
+INSERT INTO positions (position_id, position_name, department_id) VALUES ('P01', 'Admin', 'D001');
+INSERT INTO positions (position_id, position_name, department_id) VALUES ('P02', 'พนักงาน', 'D002');
 
 INSERT INTO screens VALUES ('SC01', 'จัดการรถ');
 INSERT INTO screens VALUES ('SC02', 'จัดการการจอง');

@@ -180,7 +180,18 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .topbar-inner { max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); }
 .topbar .brand { font-weight: 700; color: #fff; display: flex; align-items: center; gap: var(--s2); text-decoration: none; }
 .topbar .spacer { flex: 1; }
-.topbar .switch-link { color: #fff; font-size: .8rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, .16); text-decoration: none; }
+.topbar .switch-link { color: #fff; font-size: .8rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, .16); text-decoration: none; white-space: nowrap; }
+.topbar .brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.topbar .brand-name { display: flex; align-items: center; gap: 6px; }
+.topbar .brand-who { font-size: .75rem; font-weight: 500; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar .role-tag { font-size: .68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: #fff; color: var(--primary); }
+.topbar .brand:has(.brand-text) { min-width: 0; }
+.topbar-icon { display: inline-grid; place-items: center; width: 36px; height: 36px; flex: none; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .16); color: #fff; cursor: pointer; }
+.topbar-icon:hover { background: rgba(255, 255, 255, .28); }
+@media (max-width: 400px) {
+  .topbar-inner { gap: var(--s2); padding-inline: var(--s3); }
+  .topbar .hide-xs { display: none; }
+}
 .app-main { max-width: 640px; margin: 0 auto; padding: var(--s4) var(--s4) calc(var(--tabbar-h) + var(--s5)); }
 .page-head { margin-bottom: var(--s4); }
 .page-head h1 { margin-bottom: var(--s1); }
@@ -296,6 +307,10 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .matrix td, .matrix th { text-align: center; }
 .matrix td:first-child, .matrix th:first-child { text-align: left; }
 .matrix input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer; }
+.how-it-works summary { cursor: pointer; margin-bottom: 0; }
+.how-it-works[open] summary { margin-bottom: var(--s3); }
+.role-steps { margin: 0 0 var(--s3); padding-left: 1.25rem; }
+.role-steps li + li { margin-top: var(--s2); }
 .repeat-row { display: grid; grid-template-columns: 24px 32px minmax(0, 1fr) auto auto; gap: var(--s2); align-items: center; padding: var(--s2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin-bottom: var(--s2); }
 .repeat-row.dragging { opacity: .5; }
 .repeat-row .handle { cursor: grab; color: var(--text-muted); text-align: center; user-select: none; font-size: 1.2rem; }

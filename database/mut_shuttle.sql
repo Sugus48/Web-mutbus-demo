@@ -24,7 +24,9 @@ CREATE TABLE departments (
 CREATE TABLE positions (
   position_id   VARCHAR(10)  NOT NULL,                 -- รหัสตำแหน่ง (PK)
   position_name VARCHAR(100) NOT NULL,                 -- ชื่อตำแหน่ง
-  PRIMARY KEY (position_id)
+  department_id VARCHAR(10)  NULL,                     -- แผนกของตำแหน่ง (FK) — NULL = ใช้ได้ทุกแผนก
+  PRIMARY KEY (position_id),
+  CONSTRAINT fk_positions_department FOREIGN KEY (department_id) REFERENCES departments (department_id)
 ) ENGINE=InnoDB COMMENT='ตำแหน่ง';
 
 -- 6. หน้าจอ
@@ -601,9 +603,9 @@ INSERT INTO departments VALUES
   ('D002', 'ฝ่ายปฏิบัติการ'),
   ('D003', 'นักศึกษา');
 
-INSERT INTO positions VALUES
-  ('P01', 'Admin'),
-  ('P02', 'พนักงาน');
+INSERT INTO positions (position_id, position_name, department_id) VALUES
+  ('P01', 'Admin', 'D001'),
+  ('P02', 'พนักงาน', 'D002');
 
 INSERT INTO screens VALUES
   ('SC01', 'จัดการรถ'),

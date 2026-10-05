@@ -12,6 +12,23 @@
 -- =====================================================================
 USE mut_shuttle;
 
+-- ปรับโครงสร้างฐานข้อมูลเดิม (รันซ้ำได้ — ข้ามถ้ามีแล้ว)
+-- ตำแหน่งสังกัดแผนก (positions.department_id — NULL = ใช้ได้ทุกแผนก)
+DELIMITER $$
+DROP PROCEDURE IF EXISTS mut_migrate$$
+CREATE PROCEDURE mut_migrate()
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'positions' AND COLUMN_NAME = 'department_id') THEN
+    ALTER TABLE positions
+      ADD COLUMN department_id VARCHAR(10) NULL COMMENT 'แผนกของตำแหน่ง (FK) — NULL = ใช้ได้ทุกแผนก' AFTER position_name,
+      ADD CONSTRAINT fk_positions_department FOREIGN KEY (department_id) REFERENCES departments (department_id);
+  END IF;
+END$$
+DELIMITER ;
+CALL mut_migrate();
+DROP PROCEDURE mut_migrate;
+
 -- ลบของเดิม (รันไฟล์นี้ซ้ำได้)
 DROP VIEW IF EXISTS v_item_details;
 DROP VIEW IF EXISTS v_trip_details;
@@ -118,6 +135,15 @@ BEGIN
   RETURN 0;
 END$$
 
+DROP FUNCTION IF EXISTS mut_runs_on$$
+-- วันที่นี้อยู่ในชุดวันที่วิ่ง (เช่น '12345') หรือไม่ — ใส่ตัวแปรก่อนเทียบ ให้ collation ตรงกับคอลัมน์ (กัน Illegal mix of collations)
+CREATE FUNCTION mut_runs_on(p_days VARCHAR(7), p_date DATE) RETURNS TINYINT
+DETERMINISTIC NO SQL
+BEGIN
+  DECLARE v_day CHAR(1) DEFAULT CAST(DAYOFWEEK(p_date) - 1 AS CHAR);   -- DAYOFWEEK 1 = อาทิตย์ → '0'
+  RETURN LOCATE(v_day, p_days) > 0;
+END$$
+
 DROP FUNCTION IF EXISTS mut_sha256$$
 -- SHA2-256 (hex) — ห่อเป็นฟังก์ชันให้ผลลัพธ์ใช้ collation เดียวกับฐานข้อมูล (กัน Illegal mix of collations)
 CREATE FUNCTION mut_sha256(p VARCHAR(600)) RETURNS VARCHAR(64)
@@ -170,6 +196,26 @@ RETURN EXISTS (
   SELECT 1 FROM employees e JOIN permissions p ON p.position_id = e.position_id
    WHERE e.user_id = p_uid
      AND p.screen_id IN ('SC01','SC02','SC03','SC04','SC05','SC06','SC07','SC08','SC09','SC10','SC11'))$$
+
+DROP FUNCTION IF EXISTS mut_can_assign$$
+-- จัดการผู้ใช้ในตำแหน่งนี้ได้หรือไม่ (กันผู้มีสิทธิ์จัดการผู้ใช้ ยกระดับตัวเอง/ยึดบัญชีที่มีสิทธิ์สูงกว่า)
+-- ได้ = ตำแหน่งนั้นไม่มีสิทธิ์ใดเกินสิทธิ์ของผู้ใช้ / หรือผู้ใช้แก้ไขสิทธิ์ได้ (SC10 edit กำหนดสิทธิ์ตัวเองได้อยู่แล้ว)
+-- p_position NULL (ผู้ใช้บริการ ไม่ใช่พนักงาน) = ได้
+CREATE FUNCTION mut_can_assign(p_uid VARCHAR(10), p_position VARCHAR(10)) RETURNS TINYINT
+READS SQL DATA
+RETURN mut_can(p_uid, 'SC10', 'edit') = 1 OR NOT EXISTS (
+  SELECT 1 FROM permissions t
+   WHERE t.position_id = p_position
+     AND NOT EXISTS (SELECT 1 FROM employees e JOIN permissions m ON m.position_id = e.position_id AND m.screen_id = t.screen_id
+                      WHERE e.user_id = p_uid
+                        AND m.can_add >= t.can_add AND m.can_edit >= t.can_edit AND m.can_delete >= t.can_delete))$$
+
+DROP FUNCTION IF EXISTS mut_driver_busy$$
+-- ยังมีงานขับ: เป็นคนขับในรอบตั้งแต่วันนี้ที่ยังไม่จบ หรือในตารางเวลาที่ใช้งานอยู่ (กันถอดสิทธิ์ SC12 แล้วรอบไม่มีคนขับเข้าได้)
+CREATE FUNCTION mut_driver_busy(p_user VARCHAR(10)) RETURNS TINYINT
+READS SQL DATA
+RETURN EXISTS (SELECT 1 FROM trips WHERE driver_id = p_user AND trip_date >= CURDATE() AND status IN ('เปิด', 'กำลังเดินทาง'))
+    OR EXISTS (SELECT 1 FROM trip_schedules WHERE driver_id = p_user AND active = 1)$$
 
 DROP FUNCTION IF EXISTS mut_landing$$
 -- หน้าแรกหลัง login ตามสิทธิ์
@@ -658,6 +704,21 @@ BEGIN
     SET v_msg = CONCAT('เริ่มการเดินทางได้เฉพาะรอบของวันนี้ — รอบนี้เดินรถวันที่ ', DATE_FORMAT(v_date, '%d/%m/%Y'));
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
   END IF;
+  -- กันงานขับซ้อน: คนขับยังมีรอบอื่นที่ยังไม่ปิดงาน / รถยังวิ่งอยู่ในรอบอื่น
+  SET v_msg = (SELECT CONCAT('ยังมีรอบ ', trip_id, ' ที่กำลังเดินทางอยู่ — ปิดงานรอบนั้นก่อนเริ่มรอบใหม่')
+                 FROM trips WHERE driver_id = p_uid AND status = 'กำลังเดินทาง' AND trip_id <> p_trip
+                ORDER BY trip_date, depart_time LIMIT 1);
+  IF v_msg IS NOT NULL THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+  END IF;
+  SET v_msg = (SELECT CONCAT('รถคันนี้ยังอยู่ในรอบ ', o.trip_id, ' ที่กำลังเดินทาง (คนขับ ', u.name, ') — รอให้ปิดงานก่อน')
+                 FROM trips t
+                 JOIN trips o ON o.vehicle_id = t.vehicle_id AND o.trip_id <> t.trip_id AND o.status = 'กำลังเดินทาง'
+                 JOIN users u ON u.user_id = o.driver_id
+                WHERE t.trip_id = p_trip LIMIT 1);
+  IF v_msg IS NOT NULL THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+  END IF;
   CALL sp_start_trip(p_trip, p_uid);
   SELECT 'เริ่มการเดินทางแล้ว — สแกน QR ผู้โดยสารได้เลย' AS message;
 END$$
@@ -736,7 +797,8 @@ DELIMITER ;
 DELIMITER $$
 
 DROP PROCEDURE IF EXISTS api_dashboard$$
--- ชุดที่ 1 = ตัวเลขสรุปวันนี้ / ชุดที่ 2 = รอบวันนี้ / ชุดที่ 3 = รายการจองล่าสุด 8 รายการ
+-- ชุดที่ 1 = ตัวเลขสรุปวันนี้ / ชุดที่ 2 = รอบวันนี้ (ต้องมีสิทธิ์ SC06) / ชุดที่ 3 = รายการจองล่าสุด 8 รายการ (ต้องมีสิทธิ์ SC02)
+-- ไม่มีสิทธิ์ = ชุดว่าง (เช่น คนขับที่ดูข้อมูลรถได้ ไม่ควรเห็นชื่อผู้โดยสาร)
 CREATE PROCEDURE api_dashboard(IN p_uid VARCHAR(10))
 BEGIN
   CALL sp_require_admin(p_uid);
@@ -753,8 +815,9 @@ BEGIN
     (SELECT COUNT(*) FROM vehicles WHERE status = 'พร้อมใช้งาน')                            AS vehicles_ready,
     (SELECT COUNT(*) FROM vehicles)                                                        AS vehicles_total,
     CURDATE() AS today;
-  SELECT * FROM v_trip_details WHERE trip_date = CURDATE() ORDER BY depart_time;
-  SELECT * FROM v_item_details ORDER BY booked_at DESC, booking_item_id DESC LIMIT 8;
+  SELECT * FROM v_trip_details WHERE trip_date = CURDATE() AND mut_can(p_uid, 'SC06', '') = 1 ORDER BY depart_time;
+  SELECT * FROM v_item_details WHERE mut_can(p_uid, 'SC02', '') = 1
+   ORDER BY booked_at DESC, booking_item_id DESC LIMIT 8;
 END$$
 
 DROP PROCEDURE IF EXISTS api_lookups$$
@@ -767,13 +830,14 @@ BEGIN
   SELECT route_id, route_name, total_minutes FROM v_route_totals ORDER BY route_id;
   SELECT v.vehicle_id, v.plate_no, v.status, vt.type_name, vt.seat_count
     FROM vehicles v JOIN vehicle_types vt ON vt.vehicle_type_id = v.vehicle_type_id ORDER BY v.plate_no;
-  -- คนขับ = พนักงานที่ตำแหน่งมีสิทธิ์หน้าจองานคนขับ (SC12)
+  -- คนขับ = พนักงานที่ตำแหน่งมีสิทธิ์หน้าจองานคนขับ (SC12) — ใช้ในหน้ารอบ/ตารางเวลา จึงให้เฉพาะผู้มีสิทธิ์ SC06
   SELECT u.user_id, u.name, p.position_name
     FROM employees e JOIN users u ON u.user_id = e.user_id JOIN positions p ON p.position_id = e.position_id
    WHERE e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12')
+     AND mut_can(p_uid, 'SC06', '') = 1
    ORDER BY u.name;
   SELECT department_id, department_name FROM departments ORDER BY department_id;
-  SELECT position_id, position_name FROM positions ORDER BY position_id;
+  SELECT position_id, position_name, department_id FROM positions ORDER BY position_id;
   SELECT stop_id, stop_name FROM stops ORDER BY stop_id;
   SELECT screen_id, screen_name FROM screens ORDER BY screen_id;
 END$$
@@ -842,6 +906,11 @@ BEGIN
     SET v_msg = CONCAT('ลบไม่ได้ เนื่องจากมีผู้ใช้งาน ', v_n, ' คนอยู่ในแผนกนี้');
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
   END IF;
+  SET v_n = (SELECT COUNT(*) FROM positions WHERE department_id = p_id);
+  IF v_n > 0 THEN
+    SET v_msg = CONCAT('ลบไม่ได้ เนื่องจากมี ', v_n, ' ตำแหน่งสังกัดแผนกนี้ — ย้ายตำแหน่งไปแผนกอื่นก่อน');
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+  END IF;
   DELETE FROM departments WHERE department_id = p_id;
   SELECT CONCAT('ลบแผนก ', p_id, ' เรียบร้อยแล้ว') AS message;
 END$$
@@ -851,10 +920,10 @@ DROP PROCEDURE IF EXISTS api_positions_list$$
 CREATE PROCEDURE api_positions_list(IN p_uid VARCHAR(10), IN p_q VARCHAR(100))
 BEGIN
   CALL sp_require(p_uid, 'SC09', '');
-  SELECT p.position_id, p.position_name,
+  SELECT p.position_id, p.position_name, p.department_id, d.department_name,
          (SELECT COUNT(*) FROM employees e WHERE e.position_id = p.position_id) AS employee_count,
          (SELECT COUNT(*) FROM permissions x WHERE x.position_id = p.position_id) AS screen_count
-    FROM positions p
+    FROM positions p LEFT JOIN departments d ON d.department_id = p.department_id
    WHERE mut_blank(p_q) OR p.position_id LIKE CONCAT('%', TRIM(p_q), '%') OR p.position_name LIKE CONCAT('%', TRIM(p_q), '%')
    ORDER BY p.position_id;
 END$$
@@ -870,26 +939,40 @@ BEGIN
 END$$
 
 DROP PROCEDURE IF EXISTS api_positions_save$$
-CREATE PROCEDURE api_positions_save(IN p_uid VARCHAR(10), IN p_id VARCHAR(10), IN p_position_name VARCHAR(255))
+-- p_department_id ว่าง = ใช้ได้ทุกแผนก
+CREATE PROCEDURE api_positions_save(IN p_uid VARCHAR(10), IN p_id VARCHAR(10), IN p_position_name VARCHAR(255),
+                                    IN p_department_id VARCHAR(10))
 BEGIN
   DECLARE v_id VARCHAR(10);
+  DECLARE v_n INT;
+  DECLARE v_msg VARCHAR(200);
   SET p_position_name = TRIM(COALESCE(p_position_name, ''));
+  SET p_department_id = NULLIF(TRIM(p_department_id), '');
   CALL sp_require(p_uid, 'SC09', IF(mut_blank(p_id), 'add', 'edit'));
   IF p_position_name = '' THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'position_name|กรุณากรอกชื่อตำแหน่ง';
   ELSEIF CHAR_LENGTH(p_position_name) > 100 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'position_name|ชื่อตำแหน่งยาวได้ไม่เกิน 100 ตัวอักษร';
+  ELSEIF p_department_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM departments WHERE department_id = p_department_id) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'department_id|ไม่พบแผนกที่เลือก';
   END IF;
   IF mut_blank(p_id) THEN
     SET v_id = mut_fmt_id('P', (SELECT COALESCE(MAX(CAST(SUBSTRING(position_id, 2) AS UNSIGNED)), 0) + 1
                                   FROM positions WHERE position_id LIKE 'P%'), 2);
-    INSERT INTO positions (position_id, position_name) VALUES (v_id, p_position_name);
+    INSERT INTO positions (position_id, position_name, department_id) VALUES (v_id, p_position_name, p_department_id);
     SELECT v_id AS id, CONCAT('เพิ่มตำแหน่ง ', v_id, ' เรียบร้อยแล้ว') AS message;
   ELSE
     IF NOT EXISTS (SELECT 1 FROM positions WHERE position_id = p_id) THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!notfound|ไม่พบตำแหน่ง';
     END IF;
-    UPDATE positions SET position_name = p_position_name WHERE position_id = p_id;
+    -- ย้ายตำแหน่งไปแผนกอื่น: พนักงานที่อยู่ในตำแหน่งนี้ต้องอยู่แผนกนั้นด้วย
+    SET v_n = (SELECT COUNT(*) FROM employees e JOIN users u ON u.user_id = e.user_id
+                WHERE e.position_id = p_id AND p_department_id IS NOT NULL AND u.department_id <> p_department_id);
+    IF v_n > 0 THEN
+      SET v_msg = CONCAT('department_id|เปลี่ยนแผนกไม่ได้ เนื่องจากมีพนักงาน ', v_n, ' คนในตำแหน่งนี้อยู่แผนกอื่น');
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+    END IF;
+    UPDATE positions SET position_name = p_position_name, department_id = p_department_id WHERE position_id = p_id;
     SELECT p_id AS id, CONCAT('บันทึกตำแหน่ง ', p_id, ' เรียบร้อยแล้ว') AS message;
   END IF;
 END$$
@@ -1272,6 +1355,26 @@ BEGIN
       SET v_msg = CONCAT('driver_id|คนขับคนนี้มีงานในตารางเวลา ', v_conflict);
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
     END IF;
+
+    -- รอบที่จัดเอง/แก้ไขเองตั้งแต่วันนี้ไป ที่ใช้รถ/คนขับเดียวกันในวันที่ตารางนี้วิ่งและเวลาทับกัน
+    -- (ไม่ตรวจ = sp_ensure_trips จะข้ามรอบของตารางนี้ไปเงียบๆ เพราะ trigger ปฏิเสธ)
+    SET v_msg = (
+      SELECT CONCAT(IF(t.vehicle_id = p_vehicle_id, 'vehicle_id|รถคันนี้ถูกใช้ในรอบ ', 'driver_id|คนขับคนนี้มีงานรอบ '),
+                    t.trip_id, ' วันที่ ', DATE_FORMAT(t.trip_date, '%d/%m/%Y'), ' ', rt.route_name, ' ',
+                    TIME_FORMAT(t.depart_time, '%H:%i'), '–', mut_time_add(t.depart_time, rt.total_minutes))
+        FROM trips t JOIN v_route_totals rt ON rt.route_id = t.route_id
+       WHERE t.trip_date >= CURDATE() AND t.status <> 'ยกเลิก'
+         AND (t.schedule_id IS NULL OR t.schedule_id <> COALESCE(NULLIF(p_id, ''), '-'))
+         AND NOT (t.route_id = p_route_id AND t.depart_time = v_time)   -- รอบเดียวกัน: sp_ensure_trips ไม่สร้างซ้ำอยู่แล้ว
+         AND (t.vehicle_id = p_vehicle_id OR t.driver_id = p_driver_id)
+         AND mut_runs_on(p_run_days, t.trip_date) = 1
+         AND TIME_TO_SEC(t.depart_time) DIV 60 < v_end
+         AND v_start < TIME_TO_SEC(t.depart_time) DIV 60 + rt.total_minutes
+       ORDER BY t.vehicle_id = p_vehicle_id DESC, t.trip_date, t.depart_time
+       LIMIT 1);
+    IF v_msg IS NOT NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+    END IF;
   END IF;
 
   IF mut_blank(p_id) THEN
@@ -1343,6 +1446,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM users WHERE user_id = p_id) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!notfound|ไม่พบผู้ใช้งาน';
   END IF;
+  IF mut_can_assign(p_uid, (SELECT position_id FROM employees WHERE user_id = p_id)) = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!denied|ไม่สามารถจัดการผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าคุณได้';
+  END IF;
   SELECT u.user_id, u.name, u.email, u.username, u.department_id, e.phone, e.position_id,
          CASE WHEN e.user_id IS NOT NULL THEN 1 ELSE 0 END AS is_employee
     FROM users u LEFT JOIN employees e ON e.user_id = u.user_id WHERE u.user_id = p_id;
@@ -1351,12 +1457,14 @@ END$$
 DROP PROCEDURE IF EXISTS api_users_save$$
 -- พนักงาน = subclass ของผู้ใช้งาน (+ เบอร์โทร + ตำแหน่ง) / password ว่างตอนแก้ไข = ไม่เปลี่ยน
 CREATE PROCEDURE api_users_save(IN p_uid VARCHAR(10), IN p_id VARCHAR(10), IN p_name VARCHAR(255), IN p_email VARCHAR(255),
-                                IN p_username VARCHAR(255), IN p_password VARCHAR(255), IN p_department_id VARCHAR(10),
+                                IN p_username VARCHAR(255), IN p_password VARCHAR(255), IN p_confirm VARCHAR(255),
+                                IN p_department_id VARCHAR(10),
                                 IN p_is_employee VARCHAR(5), IN p_phone VARCHAR(50), IN p_position_id VARCHAR(10))
 BEGIN
   DECLARE v_id VARCHAR(10);
   DECLARE v_new INT DEFAULT mut_blank(p_id);
   DECLARE v_emp INT DEFAULT COALESCE(p_is_employee, '') IN ('1', 'true', 'on');
+  DECLARE v_old_pos VARCHAR(10);
   DECLARE EXIT HANDLER FOR 1062
   BEGIN
     ROLLBACK;
@@ -1372,10 +1480,15 @@ BEGIN
   SET p_email = TRIM(COALESCE(p_email, ''));
   SET p_username = TRIM(COALESCE(p_username, ''));
   SET p_password = COALESCE(p_password, '');
-  SET p_phone = TRIM(COALESCE(p_phone, ''));
+  SET p_phone = REPLACE(REPLACE(TRIM(COALESCE(p_phone, '')), '-', ''), ' ', '');   -- 081-234-5678 → 0812345678
   CALL sp_require(p_uid, 'SC07', IF(v_new, 'add', 'edit'));
   IF NOT v_new AND NOT EXISTS (SELECT 1 FROM users WHERE user_id = p_id) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!notfound|ไม่พบผู้ใช้งาน';
+  END IF;
+  -- แก้ไข/รีเซ็ต password ผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าตัวเองไม่ได้
+  SET v_old_pos = (SELECT position_id FROM employees WHERE user_id = p_id);
+  IF NOT v_new AND mut_can_assign(p_uid, v_old_pos) = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!denied|ไม่สามารถจัดการผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าคุณได้';
   END IF;
 
   IF p_name = '' THEN
@@ -1388,14 +1501,26 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'username|username ใช้ a-z, 0-9, _ . - ความยาว 3–50 ตัวอักษร';
   ELSEIF (v_new OR p_password <> '') AND CHAR_LENGTH(p_password) < 4 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'password|password ต้องมีอย่างน้อย 4 ตัวอักษร';
+  ELSEIF p_password <> '' AND p_password <> COALESCE(p_confirm, '') THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'confirm|ยืนยัน password ไม่ตรงกัน';
   ELSEIF NOT EXISTS (SELECT 1 FROM departments WHERE department_id = p_department_id) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'department_id|กรุณาเลือกแผนก';
-  ELSEIF v_emp AND p_phone NOT REGEXP '^[0-9+ -]{6,20}$' THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'phone|กรุณากรอกเบอร์โทร (ตัวเลข 6–20 หลัก)';
+  ELSEIF v_emp AND p_phone NOT REGEXP '^0[0-9]{9}$' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'phone|เบอร์โทรต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 (เช่น 0812345678)';
   ELSEIF v_emp AND NOT EXISTS (SELECT 1 FROM positions WHERE position_id = p_position_id) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'position_id|กรุณาเลือกตำแหน่ง';
+  ELSEIF v_emp AND EXISTS (SELECT 1 FROM positions WHERE position_id = p_position_id
+                              AND department_id IS NOT NULL AND department_id <> p_department_id) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'position_id|ตำแหน่งนี้ไม่อยู่ในแผนกที่เลือก';
   ELSEIF NOT v_new AND p_id = p_uid AND NOT v_emp THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'is_employee|ไม่สามารถยกเลิกสถานะพนักงานของตัวเองได้';
+  ELSEIF NOT v_new AND p_id = p_uid AND NOT (p_position_id <=> v_old_pos) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'position_id|ไม่สามารถเปลี่ยนตำแหน่งของตัวเองได้';
+  ELSEIF v_emp AND mut_can_assign(p_uid, p_position_id) = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'position_id|ไม่สามารถกำหนดตำแหน่งที่มีสิทธิ์มากกว่าตำแหน่งของคุณได้';
+  ELSEIF NOT v_new AND v_emp AND NOT (p_position_id <=> v_old_pos) AND mut_driver_busy(p_id) = 1
+     AND NOT EXISTS (SELECT 1 FROM permissions WHERE position_id = p_position_id AND screen_id = 'SC12') THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'position_id|เปลี่ยนเป็นตำแหน่งนี้ไม่ได้ เนื่องจากผู้ใช้นี้ยังมีรอบ/ตารางเวลาที่ต้องขับ แต่ตำแหน่งใหม่ไม่มีสิทธิ์งานคนขับ';
   ELSEIF EXISTS (SELECT 1 FROM users WHERE email = p_email AND user_id <> COALESCE(NULLIF(p_id, ''), '-')) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'email|email นี้ถูกใช้แล้ว';
   ELSEIF EXISTS (SELECT 1 FROM users WHERE username = p_username AND user_id <> COALESCE(NULLIF(p_id, ''), '-')) THEN
@@ -1439,6 +1564,8 @@ BEGIN
   SET v_trips = (SELECT COUNT(*) FROM trips WHERE driver_id = p_id) + (SELECT COUNT(*) FROM trip_schedules WHERE driver_id = p_id);
   IF p_id = p_uid THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'ไม่สามารถลบบัญชีของตัวเองได้';
+  ELSEIF mut_can_assign(p_uid, (SELECT position_id FROM employees WHERE user_id = p_id)) = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!denied|ไม่สามารถจัดการผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าคุณได้';
   ELSEIF v_bookings > 0 THEN
     SET v_msg = CONCAT('ลบไม่ได้ เนื่องจากผู้ใช้งานนี้มีประวัติการจอง ', v_bookings, ' รายการ');
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
@@ -1480,6 +1607,7 @@ BEGIN
   DECLARE v_name VARCHAR(100);
   DECLARE v_n INT;
   DECLARE v_matrix VARCHAR(2010);
+  DECLARE v_msg VARCHAR(255);
   DECLARE cur CURSOR FOR SELECT screen_id FROM screens ORDER BY screen_id;
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
@@ -1496,6 +1624,18 @@ BEGIN
     SET v_pos = LOCATE(';SC10=', v_matrix);
     IF v_pos = 0 OR SUBSTRING(v_matrix, v_pos + 6, 1) <> '1' OR SUBSTRING(v_matrix, v_pos + 8, 1) <> '1' THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'ไม่สามารถถอดสิทธิ์ เข้าถึง/แก้ไข หน้าจอจัดการสิทธิ์ ของตำแหน่งตัวเองได้';
+    END IF;
+  END IF;
+
+  -- กันถอดสิทธิ์งานคนขับ (SC12) ขณะที่พนักงานในตำแหน่งนี้ยังมีรอบ/ตารางเวลาที่ต้องขับ
+  SET v_pos = LOCATE(';SC12=', v_matrix);
+  IF (v_pos = 0 OR SUBSTRING(v_matrix, v_pos + 6, 1) <> '1')
+     AND EXISTS (SELECT 1 FROM permissions WHERE position_id = p_position AND screen_id = 'SC12') THEN
+    SET v_n = (SELECT COUNT(*) FROM employees WHERE position_id = p_position AND mut_driver_busy(user_id) = 1);
+    IF v_n > 0 THEN
+      SET v_msg = CONCAT('ถอดสิทธิ์งานคนขับไม่ได้ เนื่องจากพนักงานในตำแหน่งนี้ ', v_n,
+                         ' คนยังมีรอบ/ตารางเวลาที่ต้องขับ — เปลี่ยนคนขับในรอบและตารางเวลาเหล่านั้นก่อน');
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
     END IF;
   END IF;
 
@@ -1576,6 +1716,7 @@ BEGIN
   DECLARE v_prev VARCHAR(10) DEFAULT NULL;
   DECLARE v_seq VARCHAR(2000) DEFAULT ',';
   DECLARE v_broken INT;
+  DECLARE v_total INT;
   DECLARE v_msg VARCHAR(255);
   DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
 
@@ -1634,6 +1775,46 @@ BEGIN
       SET v_msg = CONCAT('stops|บันทึกไม่ได้ — มีรายการจองของรอบที่ยังเปิดใช้ช่วงจุดจอดที่ถูกตัดออก (', v_broken, ' ช่วง)');
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
     END IF;
+
+    -- เวลาเดินทางรวมยาวขึ้น → รอบ/ตารางเวลาของเส้นทางนี้จบช้าลง อาจชนงานถัดไปของรถ/คนขับเดียวกัน
+    SET v_total = (SELECT SUM(travel_minutes) FROM tmp_route_stops);
+    IF v_total > (SELECT total_minutes FROM v_route_totals WHERE route_id = p_id) THEN
+      SET v_msg = (
+        SELECT CONCAT('stops|เวลารวมใหม่ ', v_total, ' นาที ทำให้รอบ ', t.trip_id, ' วันที่ ',
+                      DATE_FORMAT(t.trip_date, '%d/%m/%Y'), ' ', TIME_FORMAT(t.depart_time, '%H:%i'), ' ชนกับรอบ ', o.trip_id,
+                      IF(o.vehicle_id = t.vehicle_id, ' (รถคันเดียวกัน)', ' (คนขับเดียวกัน)'))
+          FROM trips t
+          JOIN trips o ON o.trip_id <> t.trip_id AND o.status <> 'ยกเลิก'
+                      AND (o.vehicle_id = t.vehicle_id OR o.driver_id = t.driver_id)
+                      AND o.trip_date BETWEEN t.trip_date - INTERVAL 1 DAY AND t.trip_date + INTERVAL 1 DAY
+          JOIN v_route_totals ort ON ort.route_id = o.route_id
+         WHERE t.route_id = p_id AND t.trip_date >= CURDATE() AND t.status IN ('เปิด', 'กำลังเดินทาง')
+           AND TIMESTAMP(o.trip_date, o.depart_time) < TIMESTAMP(t.trip_date, t.depart_time) + INTERVAL v_total MINUTE
+           AND TIMESTAMP(t.trip_date, t.depart_time)
+               < TIMESTAMP(o.trip_date, o.depart_time) + INTERVAL IF(o.route_id = p_id, v_total, ort.total_minutes) MINUTE
+         ORDER BY t.trip_date, t.depart_time
+         LIMIT 1);
+      IF v_msg IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+      END IF;
+      SET v_msg = (
+        SELECT CONCAT('stops|เวลารวมใหม่ ', v_total, ' นาที ทำให้ตารางเวลา ', s.schedule_id, ' (',
+                      TIME_FORMAT(s.depart_time, '%H:%i'), ') ชนกับตารางเวลา ', o.schedule_id,
+                      IF(o.vehicle_id = s.vehicle_id, ' (รถคันเดียวกัน)', ' (คนขับเดียวกัน)'))
+          FROM trip_schedules s
+          JOIN trip_schedules o ON o.schedule_id <> s.schedule_id AND o.active = 1
+                               AND (o.vehicle_id = s.vehicle_id OR o.driver_id = s.driver_id)
+                               AND mut_days_overlap(o.run_days, s.run_days) = 1
+          JOIN v_route_totals ort ON ort.route_id = o.route_id
+         WHERE s.route_id = p_id AND s.active = 1
+           AND TIME_TO_SEC(o.depart_time) DIV 60 < TIME_TO_SEC(s.depart_time) DIV 60 + v_total
+           AND TIME_TO_SEC(s.depart_time) DIV 60 < TIME_TO_SEC(o.depart_time) DIV 60 + IF(o.route_id = p_id, v_total, ort.total_minutes)
+         ORDER BY s.depart_time
+         LIMIT 1);
+      IF v_msg IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+      END IF;
+    END IF;
   END IF;
 
   START TRANSACTION;
@@ -1672,12 +1853,15 @@ END$$
 
 DROP PROCEDURE IF EXISTS api_trips_list$$
 -- p_date ว่าง = ทุกวัน (หน้าเว็บส่งวันนี้เป็นค่าเริ่มต้น) — แสดงไม่เกิน 500 รอบ
+-- p_q = ค้นรหัสรอบ (บางส่วนได้) — มีค่าแล้วไม่กรองวันที่ เพราะรหัสรอบไม่ซ้ำกันอยู่แล้ว
 CREATE PROCEDURE api_trips_list(IN p_uid VARCHAR(10), IN p_date VARCHAR(20), IN p_route VARCHAR(10),
-                                IN p_driver VARCHAR(10), IN p_vehicle VARCHAR(10), IN p_status VARCHAR(30))
+                                IN p_driver VARCHAR(10), IN p_vehicle VARCHAR(10), IN p_status VARCHAR(30),
+                                IN p_q VARCHAR(30))
 BEGIN
   CALL sp_require(p_uid, 'SC06', '');
   SELECT * FROM v_trip_details
-   WHERE (mut_is_date(p_date) = 0 OR trip_date = p_date)
+   WHERE (mut_blank(p_q) OR UPPER(trip_id) LIKE CONCAT('%', UPPER(TRIM(p_q)), '%'))
+     AND (NOT mut_blank(p_q) OR mut_is_date(p_date) = 0 OR trip_date = p_date)
      AND (mut_blank(p_route) OR route_id = p_route)
      AND (mut_blank(p_driver) OR driver_id = p_driver)
      AND (mut_blank(p_vehicle) OR vehicle_id = p_vehicle)
@@ -1726,6 +1910,7 @@ BEGIN
   DECLARE v_old_vehicle VARCHAR(10);
   DECLARE v_old_driver VARCHAR(10);
   DECLARE v_old_route VARCHAR(10);
+  DECLARE v_old_sched VARCHAR(10);
   DECLARE v_booked INT DEFAULT 0;
   DECLARE v_vstatus VARCHAR(30);
   DECLARE v_vseats INT;
@@ -1738,7 +1923,8 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM trips WHERE trip_id = p_id) THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!notfound|ไม่พบรอบการเดินรถ';
     END IF;
-    SELECT t.vehicle_id, t.driver_id, t.route_id, s.booked_seats INTO v_old_vehicle, v_old_driver, v_old_route, v_booked
+    SELECT t.vehicle_id, t.driver_id, t.route_id, t.schedule_id, s.booked_seats
+      INTO v_old_vehicle, v_old_driver, v_old_route, v_old_sched, v_booked
       FROM trips t JOIN v_trip_seats s ON s.trip_id = t.trip_id WHERE t.trip_id = p_id;
   END IF;
   SET v_status = IF(v_new, 'เปิด', p_status);
@@ -1800,6 +1986,30 @@ BEGIN
     IF v_conflict IS NOT NULL THEN
       SET v_msg = CONCAT('driver_id|ไม่สามารถจัดรอบนี้ได้ เนื่องจากคนขับมีงานรอบ ', v_conflict);
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+    END IF;
+
+    -- ตารางเวลาที่ยังไม่ได้สร้างรอบของวันนั้น (sp_ensure_trips สร้างล่วงหน้าแค่ 8 วัน) ที่ใช้รถ/คนขับเดียวกันและเวลาทับกัน
+    IF v_date >= CURDATE() THEN
+      SET v_msg = (
+        SELECT CONCAT(IF(s.vehicle_id = p_vehicle_id, 'vehicle_id|ไม่สามารถจัดรอบนี้ได้ เนื่องจากรถถูกใช้ในตารางเวลา ',
+                                                      'driver_id|ไม่สามารถจัดรอบนี้ได้ เนื่องจากคนขับมีงานในตารางเวลา '),
+                      s.schedule_id, ' ', rt.route_name, ' ', TIME_FORMAT(s.depart_time, '%H:%i'), '–',
+                      mut_time_add(s.depart_time, rt.total_minutes))
+        FROM trip_schedules s JOIN v_route_totals rt ON rt.route_id = s.route_id
+       WHERE s.active = 1 AND s.schedule_id <> COALESCE(v_old_sched, '-')
+         AND NOT (s.route_id = p_route_id AND s.depart_time = v_time)   -- รอบเดียวกัน: sp_ensure_trips ไม่สร้างซ้ำอยู่แล้ว
+         AND (s.vehicle_id = p_vehicle_id OR s.driver_id = p_driver_id)
+         AND mut_runs_on(s.run_days, v_date) = 1
+         AND NOT EXISTS (SELECT 1 FROM trips t
+                          WHERE t.trip_date = v_date
+                            AND (t.schedule_id = s.schedule_id OR (t.route_id = s.route_id AND t.depart_time = s.depart_time)))
+         AND TIME_TO_SEC(s.depart_time) DIV 60 < TIME_TO_SEC(v_time) DIV 60 + v_minutes
+         AND TIME_TO_SEC(v_time) DIV 60 < TIME_TO_SEC(s.depart_time) DIV 60 + rt.total_minutes
+       ORDER BY s.vehicle_id = p_vehicle_id DESC
+       LIMIT 1);
+      IF v_msg IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+      END IF;
     END IF;
   END IF;
 

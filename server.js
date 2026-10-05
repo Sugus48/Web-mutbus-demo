@@ -128,13 +128,23 @@ app.post('/api/:name', async (req, res) => {
   const proc = `api_${String(req.params.name).toLowerCase()}`;
   if (!/^api_[a-z0-9_]+$/.test(proc)) return res.status(404).json({ error: 'ไม่พบ API' });
   if (!req.session.uid) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อนใช้งาน', login: true });
+  const body = req.body || {};
+  const callApi = () => call(proc, apiParams[proc].map((p) => (p === 'p_uid' ? req.session.uid : toArg(body[p.replace(/^p_/, '')]))));
   try {
     if (!apiParams || !apiParams[proc]) await loadApi(); // โหลดใหม่เผื่อเพิ่ง import procedure
-    const params = apiParams[proc];
-    if (!params) return res.status(404).json({ error: 'ไม่พบ API' });
-    const body = req.body || {};
-    const args = params.map((p) => (p === 'p_uid' ? req.session.uid : toArg(body[p.replace(/^p_/, '')])));
-    res.json({ sets: await call(proc, args) });
+    if (!apiParams[proc]) return res.status(404).json({ error: 'ไม่พบ API' });
+    let sets;
+    try {
+      sets = await callApi();
+    } catch (err) {
+      // procedure ถูกแก้พารามิเตอร์ (npm run db:api) ขณะเว็บเปิดอยู่ → รายชื่อที่จำไว้เก่า: โหลดใหม่แล้วลองอีกครั้ง
+      // (error นี้เกิดก่อน procedure ทำงาน จึงเรียกซ้ำได้ปลอดภัย)
+      if (db.normalize(err).code !== 'ER_SP_WRONG_NO_OF_ARGS') throw err;
+      await loadApi();
+      if (!apiParams[proc]) return res.status(404).json({ error: 'ไม่พบ API' });
+      sets = await callApi();
+    }
+    res.json({ sets });
   } catch (err) {
     sendError(res, err);
   }
