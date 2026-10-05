@@ -11,6 +11,8 @@
 > ทำไมยังต้องมี `server.js`? — เบราว์เซอร์คุยกับ MySQL ตรงๆ ไม่ได้ และถ้าให้ต่อตรงได้ ใครก็อ่าน/แก้ฐานข้อมูลได้ทั้งหมด
 > `server.js` จึงทำแค่ 3 อย่าง: เสิร์ฟไฟล์หน้าเว็บ, เก็บว่าใคร login อยู่ (session), และส่งต่อคำขอไปเรียก procedure — **ไม่มี logic ของระบบอยู่ในนั้น**
 
+📖 **อธิบายการทำงานของโค้ด พร้อมตัวอย่าง** (การป้องกันรอบรถชนกัน, สิทธิ์, สถานะบัญชี, การจองที่นั่ง): [docs/how-it-works.md](docs/how-it-works.md)
+
 ## ติดตั้งและรัน
 
 เลือกฐานข้อมูลด้วย `DB_CLIENT` ในไฟล์ `.env` (ดูตัวอย่างใน `.env.example`)
@@ -75,7 +77,7 @@
 - ตรวจสิทธิ์ด้วย `sp_require(p_uid, 'SC06', 'edit')` (ค่าว่าง = เข้าถึง, `add`, `edit`, `delete`)
 - แจ้ง error — Oracle: `mut_err('ชื่อช่อง|ข้อความ')` (= `RAISE_APPLICATION_ERROR(-20001, ...)`) / MySQL: `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'ชื่อช่อง|ข้อความ'` — หน้าเว็บจะแสดงข้อความใต้ช่องนั้น
 - คืนผลลัพธ์ — Oracle: `OPEN rc FOR SELECT ...; DBMS_SQL.RETURN_RESULT(rc);` / MySQL: `SELECT ...` (คืนได้หลายชุด)
-  (`!denied|...` = ไม่มีสิทธิ์, `!notfound|...` = ไม่พบข้อมูล, ไม่มี `|` = ข้อความทั่วไป)
+  (`!denied|...` = ไม่มีสิทธิ์, `!notfound|...` = ไม่พบข้อมูล, `!login|...` = บัญชีถูกปิด → กลับหน้า login, ไม่มี `|` = ข้อความทั่วไป)
 - เพิ่ม procedure ใหม่แล้วไม่ต้องแก้ `server.js` — server อ่านรายชื่อพารามิเตอร์จากฐานข้อมูลเอง (`user_arguments` / `information_schema`)
 - บัญชี Oracle ไม่มีสิทธิ์ CREATE VIEW — ฉบับ Oracle ใช้ฟังก์ชัน `mut_*` และ procedure `sp_items` / `sp_trips` แทน view
 
