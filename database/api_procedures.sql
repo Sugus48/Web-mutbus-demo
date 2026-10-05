@@ -13,7 +13,7 @@
 USE mut_shuttle;
 
 -- ปรับโครงสร้างฐานข้อมูลเดิม (รันซ้ำได้ — ข้ามถ้ามีแล้ว)
--- ตำแหน่งสังกัดแผนก (positions.department_id — NULL = ใช้ได้ทุกแผนก)
+-- ตำแหน่งสังกัดแผนก (positions.department_id — NULL = ใช้ได้ทุกแผนก) / สถานะบัญชี (users.status)
 DELIMITER $$
 DROP PROCEDURE IF EXISTS mut_migrate$$
 CREATE PROCEDURE mut_migrate()
@@ -23,6 +23,21 @@ BEGIN
     ALTER TABLE positions
       ADD COLUMN department_id VARCHAR(10) NULL COMMENT 'แผนกของตำแหน่ง (FK) — NULL = ใช้ได้ทุกแผนก' AFTER position_name,
       ADD CONSTRAINT fk_positions_department FOREIGN KEY (department_id) REFERENCES departments (department_id);
+  END IF;
+  -- สถานะบัญชี (users.status) — บัญชีเดิมทั้งหมดเป็น "ใช้งาน"
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'status') THEN
+    ALTER TABLE users
+      ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'ใช้งาน' COMMENT 'ใช้งาน / ลาพัก / ระงับชั่วคราว / ลาออก' AFTER department_id,
+      ADD CONSTRAINT ck_users_status CHECK (status IN ('ใช้งาน', 'ลาพัก', 'ระงับชั่วคราว', 'ลาออก'));
+  END IF;
+  -- ตัดสถานะ "จบการศึกษา" (นักศึกษาที่จบแล้วใช้งานต่อได้) — บัญชีที่เคยตั้งไว้กลับเป็น "ใช้งาน"
+  IF EXISTS (SELECT 1 FROM information_schema.CHECK_CONSTRAINTS
+              WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'ck_users_status'
+                AND CHECK_CLAUSE LIKE '%จบการศึกษา%') THEN
+    UPDATE users SET status = 'ใช้งาน' WHERE status = 'จบการศึกษา';
+    ALTER TABLE users DROP CONSTRAINT ck_users_status,
+      ADD CONSTRAINT ck_users_status CHECK (status IN ('ใช้งาน', 'ลาพัก', 'ระงับชั่วคราว', 'ลาออก'));
   END IF;
 END$$
 DELIMITER ;
@@ -177,6 +192,12 @@ BEGIN
   RETURN 0;
 END$$
 
+DROP FUNCTION IF EXISTS mut_active$$
+-- บัญชีใช้งานได้ (login/จอง/ใช้สิทธิ์): สถานะ ใช้งาน หรือ ลาพัก — ระงับชั่วคราว / ลาออก = ใช้ไม่ได้
+CREATE FUNCTION mut_active(p_uid VARCHAR(10)) RETURNS TINYINT
+READS SQL DATA
+RETURN EXISTS (SELECT 1 FROM users WHERE user_id = p_uid AND status IN ('ใช้งาน', 'ลาพัก'))$$
+
 DROP FUNCTION IF EXISTS mut_can$$
 -- สิทธิ์ของผู้ใช้ต่อหน้าจอ: p_action = '' (เข้าถึง) / 'add' / 'edit' / 'delete'
 CREATE FUNCTION mut_can(p_uid VARCHAR(10), p_screen VARCHAR(10), p_action VARCHAR(10)) RETURNS TINYINT
@@ -185,7 +206,7 @@ RETURN COALESCE((
   SELECT CASE p_action WHEN 'add' THEN p.can_add WHEN 'edit' THEN p.can_edit WHEN 'delete' THEN p.can_delete ELSE 1 END
     FROM employees e
     JOIN permissions p ON p.position_id = e.position_id AND p.screen_id = p_screen
-   WHERE e.user_id = p_uid
+   WHERE e.user_id = p_uid AND mut_active(p_uid) = 1
    LIMIT 1), 0)$$
 
 DROP FUNCTION IF EXISTS mut_has_admin$$
@@ -194,7 +215,7 @@ CREATE FUNCTION mut_has_admin(p_uid VARCHAR(10)) RETURNS TINYINT
 READS SQL DATA
 RETURN EXISTS (
   SELECT 1 FROM employees e JOIN permissions p ON p.position_id = e.position_id
-   WHERE e.user_id = p_uid
+   WHERE e.user_id = p_uid AND mut_active(p_uid) = 1
      AND p.screen_id IN ('SC01','SC02','SC03','SC04','SC05','SC06','SC07','SC08','SC09','SC10','SC11'))$$
 
 DROP FUNCTION IF EXISTS mut_can_assign$$
@@ -239,6 +260,15 @@ CREATE PROCEDURE sp_require_admin(IN p_uid VARCHAR(10))
 BEGIN
   IF p_uid IS NULL OR mut_has_admin(p_uid) = 0 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!denied|ตำแหน่งของคุณไม่มีสิทธิ์ใช้งานหลังบ้าน';
+  END IF;
+END$$
+
+DROP PROCEDURE IF EXISTS sp_require_active$$
+-- บัญชีต้องใช้งานได้ ไม่ผ่าน → !login (server.js ตอบ 401 → หน้าเว็บพาไปหน้า login)
+CREATE PROCEDURE sp_require_active(IN p_uid VARCHAR(10))
+BEGIN
+  IF p_uid IS NULL OR mut_active(p_uid) = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!login|บัญชีของคุณถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
   END IF;
 END$$
 
@@ -335,6 +365,7 @@ CREATE PROCEDURE sp_login(IN p_username VARCHAR(100), IN p_password VARCHAR(255)
 proc: BEGIN
   DECLARE v_id VARCHAR(10);
   DECLARE v_hash VARCHAR(255);
+  DECLARE v_msg VARCHAR(255);
   SET p_username = TRIM(COALESCE(p_username, ''));
 
   IF p_username = '' THEN
@@ -347,6 +378,11 @@ proc: BEGIN
   SET v_id = (SELECT user_id FROM users WHERE username = p_username);
   IF v_id IS NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'username|ไม่พบ username นี้ในระบบ';
+  END IF;
+  IF mut_active(v_id) = 0 THEN
+    SET v_msg = CONCAT('username|เข้าสู่ระบบไม่ได้ — บัญชีนี้อยู่ในสถานะ "', (SELECT status FROM users WHERE user_id = v_id),
+                       '" กรุณาติดต่อผู้ดูแลระบบ');
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
   END IF;
   SET v_hash = (SELECT password_hash FROM users WHERE user_id = v_id);
 
@@ -427,6 +463,7 @@ DROP PROCEDURE IF EXISTS api_me$$
 -- ชุดที่ 1: ผู้ใช้ / ชุดที่ 2: สิทธิ์รายหน้าจอ
 CREATE PROCEDURE api_me(IN p_uid VARCHAR(10))
 BEGIN
+  CALL sp_require_active(p_uid);   -- บัญชีถูกปิดขณะ login อยู่ → กลับหน้า login ทันทีที่เปิดหน้าถัดไป
   SELECT u.user_id, u.name, u.username, e.position_id,
          mut_can(u.user_id, 'SC12', '') AS is_driver,
          mut_has_admin(u.user_id) AS has_admin,
@@ -553,6 +590,7 @@ BEGIN
   DECLARE v_booking VARCHAR(10);
   DECLARE v_item VARCHAR(10);
   DECLARE v_qr VARCHAR(64);
+  CALL sp_require_active(p_uid);
   IF mut_is_int(p_seats) = 0 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'seats|จองได้ 1–4 ที่นั่งต่อรายการ';
   END IF;
@@ -831,7 +869,8 @@ BEGIN
   SELECT v.vehicle_id, v.plate_no, v.status, vt.type_name, vt.seat_count
     FROM vehicles v JOIN vehicle_types vt ON vt.vehicle_type_id = v.vehicle_type_id ORDER BY v.plate_no;
   -- คนขับ = พนักงานที่ตำแหน่งมีสิทธิ์หน้าจองานคนขับ (SC12) — ใช้ในหน้ารอบ/ตารางเวลา จึงให้เฉพาะผู้มีสิทธิ์ SC06
-  SELECT u.user_id, u.name, p.position_name
+  -- status: หน้าเว็บใช้ทุกคนในตัวกรอง (ดูรอบย้อนหลังของคนที่ลาออก) แต่ให้เลือกในฟอร์มเฉพาะ "ใช้งาน"
+  SELECT u.user_id, u.name, p.position_name, u.status
     FROM employees e JOIN users u ON u.user_id = e.user_id JOIN positions p ON p.position_id = e.position_id
    WHERE e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12')
      AND mut_can(p_uid, 'SC06', '') = 1
@@ -1316,9 +1355,10 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'depart_time|กรุณาระบุเวลาออก';
   ELSEIF COALESCE(p_run_days, '') NOT IN ('12345', '123456', '0123456', '06') THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'run_days|กรุณาเลือกวันที่วิ่ง';
-  ELSEIF NOT EXISTS (SELECT 1 FROM employees e WHERE e.user_id = p_driver_id
+  ELSEIF NOT EXISTS (SELECT 1 FROM employees e JOIN users u ON u.user_id = e.user_id
+                      WHERE e.user_id = p_driver_id AND u.status = 'ใช้งาน'
                         AND e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12')) THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'driver_id|กรุณาเลือกคนขับ';
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'driver_id|กรุณาเลือกคนขับ (เฉพาะคนขับที่สถานะ "ใช้งาน")';
   ELSEIF NOT EXISTS (SELECT 1 FROM vehicles WHERE vehicle_id = p_vehicle_id) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'vehicle_id|กรุณาเลือกรถ';
   ELSEIF COALESCE(p_active, '') NOT IN ('0', '1') THEN
@@ -1420,11 +1460,12 @@ DELIMITER $$
 
 DROP PROCEDURE IF EXISTS api_users_list$$
 -- p_type: employee = เฉพาะพนักงาน / user = เฉพาะผู้ใช้บริการทั่วไป
+-- p_status: ว่าง = ซ่อนบัญชีที่ ลาออก / all = ทั้งหมด / อื่นๆ = เฉพาะสถานะนั้น
 CREATE PROCEDURE api_users_list(IN p_uid VARCHAR(10), IN p_q VARCHAR(100), IN p_department VARCHAR(10),
-                                IN p_position VARCHAR(10), IN p_type VARCHAR(10))
+                                IN p_position VARCHAR(10), IN p_type VARCHAR(10), IN p_status VARCHAR(20))
 BEGIN
   CALL sp_require(p_uid, 'SC07', '');
-  SELECT u.user_id, u.name, u.email, u.username, d.department_name, e.phone, p.position_name,
+  SELECT u.user_id, u.name, u.email, u.username, d.department_name, e.phone, p.position_name, u.status,
          CASE WHEN e.user_id IS NOT NULL THEN 1 ELSE 0 END AS is_employee
     FROM users u
     JOIN departments d ON d.department_id = u.department_id
@@ -1436,6 +1477,8 @@ BEGIN
      AND (mut_blank(p_position) OR e.position_id = p_position)
      AND (COALESCE(p_type, '') <> 'employee' OR e.user_id IS NOT NULL)
      AND (COALESCE(p_type, '') <> 'user' OR e.user_id IS NULL)
+     AND (CASE WHEN mut_blank(p_status) THEN u.status <> 'ลาออก'
+               ELSE p_status = 'all' OR u.status = p_status END)
    ORDER BY u.user_id;
 END$$
 
@@ -1449,22 +1492,28 @@ BEGIN
   IF mut_can_assign(p_uid, (SELECT position_id FROM employees WHERE user_id = p_id)) = 0 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!denied|ไม่สามารถจัดการผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าคุณได้';
   END IF;
-  SELECT u.user_id, u.name, u.email, u.username, u.department_id, e.phone, e.position_id,
+  SELECT u.user_id, u.name, u.email, u.username, u.department_id, u.status, e.phone, e.position_id,
          CASE WHEN e.user_id IS NOT NULL THEN 1 ELSE 0 END AS is_employee
     FROM users u LEFT JOIN employees e ON e.user_id = u.user_id WHERE u.user_id = p_id;
 END$$
 
 DROP PROCEDURE IF EXISTS api_users_save$$
 -- พนักงาน = subclass ของผู้ใช้งาน (+ เบอร์โทร + ตำแหน่ง) / password ว่างตอนแก้ไข = ไม่เปลี่ยน
+-- p_status: ใช้งาน / ลาพัก (พนักงาน) / ระงับชั่วคราว / ลาออก (พนักงาน) — ว่าง = คงเดิม (ใหม่ = ใช้งาน)
 CREATE PROCEDURE api_users_save(IN p_uid VARCHAR(10), IN p_id VARCHAR(10), IN p_name VARCHAR(255), IN p_email VARCHAR(255),
                                 IN p_username VARCHAR(255), IN p_password VARCHAR(255), IN p_confirm VARCHAR(255),
                                 IN p_department_id VARCHAR(10),
-                                IN p_is_employee VARCHAR(5), IN p_phone VARCHAR(50), IN p_position_id VARCHAR(10))
+                                IN p_is_employee VARCHAR(5), IN p_phone VARCHAR(50), IN p_position_id VARCHAR(10),
+                                IN p_status VARCHAR(20))
 BEGIN
   DECLARE v_id VARCHAR(10);
   DECLARE v_new INT DEFAULT mut_blank(p_id);
   DECLARE v_emp INT DEFAULT COALESCE(p_is_employee, '') IN ('1', 'true', 'on');
   DECLARE v_old_pos VARCHAR(10);
+  DECLARE v_old_st VARCHAR(20);
+  DECLARE v_closed INT DEFAULT 0;
+  DECLARE v_cancel INT DEFAULT 0;
+  DECLARE v_msg VARCHAR(255);
   DECLARE EXIT HANDLER FOR 1062
   BEGIN
     ROLLBACK;
@@ -1490,6 +1539,10 @@ BEGIN
   IF NOT v_new AND mut_can_assign(p_uid, v_old_pos) = 0 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '!denied|ไม่สามารถจัดการผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าคุณได้';
   END IF;
+  SET v_old_st = (SELECT status FROM users WHERE user_id = p_id);
+  SET p_status = COALESCE(NULLIF(TRIM(p_status), ''), v_old_st, 'ใช้งาน');
+  -- ปิดบัญชี = login/จองไม่ได้ (ลาพัก ยังใช้งานได้แต่ไม่ถูกเลือกเป็นคนขับ)
+  SET v_closed = p_status IN ('ระงับชั่วคราว', 'ลาออก') AND NOT (p_status <=> v_old_st);
 
   IF p_name = '' THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'name|กรุณากรอกชื่อ';
@@ -1521,6 +1574,15 @@ BEGIN
   ELSEIF NOT v_new AND v_emp AND NOT (p_position_id <=> v_old_pos) AND mut_driver_busy(p_id) = 1
      AND NOT EXISTS (SELECT 1 FROM permissions WHERE position_id = p_position_id AND screen_id = 'SC12') THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'position_id|เปลี่ยนเป็นตำแหน่งนี้ไม่ได้ เนื่องจากผู้ใช้นี้ยังมีรอบ/ตารางเวลาที่ต้องขับ แต่ตำแหน่งใหม่ไม่มีสิทธิ์งานคนขับ';
+  ELSEIF p_status NOT IN ('ใช้งาน', 'ลาพัก', 'ระงับชั่วคราว', 'ลาออก') THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'status|กรุณาเลือกสถานะบัญชี';
+  ELSEIF NOT v_emp AND p_status IN ('ลาพัก', 'ลาออก') THEN
+    SET v_msg = CONCAT('status|สถานะ "', p_status, '" ใช้กับพนักงานเท่านั้น');
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+  ELSEIF NOT v_new AND p_id = p_uid AND p_status <> v_old_st THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'status|ไม่สามารถเปลี่ยนสถานะบัญชีของตัวเองได้';
+  ELSEIF NOT v_new AND p_status <> 'ใช้งาน' AND p_status <> v_old_st AND mut_driver_busy(p_id) = 1 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'status|เปลี่ยนสถานะไม่ได้ เนื่องจากผู้ใช้นี้ยังมีรอบ/ตารางเวลาที่ต้องขับ — เปลี่ยนคนขับก่อน';
   ELSEIF EXISTS (SELECT 1 FROM users WHERE email = p_email AND user_id <> COALESCE(NULLIF(p_id, ''), '-')) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'email|email นี้ถูกใช้แล้ว';
   ELSEIF EXISTS (SELECT 1 FROM users WHERE username = p_username AND user_id <> COALESCE(NULLIF(p_id, ''), '-')) THEN
@@ -1531,13 +1593,22 @@ BEGIN
   IF v_new THEN
     SET v_id = mut_fmt_id('U', (SELECT COALESCE(MAX(CAST(SUBSTRING(user_id, 2) AS UNSIGNED)), 0) + 1
                                   FROM users WHERE user_id LIKE 'U%'), 3);
-    INSERT INTO users (user_id, name, email, username, password_hash, department_id)
-    VALUES (v_id, p_name, p_email, p_username, mut_hash_password(p_password), p_department_id);
+    INSERT INTO users (user_id, name, email, username, password_hash, department_id, status)
+    VALUES (v_id, p_name, p_email, p_username, mut_hash_password(p_password), p_department_id, p_status);
   ELSE
     SET v_id = p_id;
     UPDATE users SET name = p_name, email = p_email, username = p_username, department_id = p_department_id,
-                     password_hash = IF(p_password = '', password_hash, mut_hash_password(p_password))
+                     password_hash = IF(p_password = '', password_hash, mut_hash_password(p_password)), status = p_status
      WHERE user_id = v_id;
+    -- ปิดบัญชี → ยกเลิกการจองที่ยังไม่ได้เดินทาง (คืนที่นั่ง)
+    IF v_closed THEN
+      UPDATE booking_items bi
+        JOIN bookings b ON b.booking_id = bi.booking_id
+        JOIN trips t    ON t.trip_id = bi.trip_id
+         SET bi.status = 'ยกเลิก'
+       WHERE b.user_id = v_id AND bi.status = 'ยืนยัน' AND bi.checkin_at IS NULL AND t.status = 'เปิด';
+      SET v_cancel = ROW_COUNT();
+    END IF;
   END IF;
 
   IF v_emp THEN
@@ -1549,8 +1620,9 @@ BEGIN
   COMMIT;
 
   SELECT v_id AS id,
-         IF(v_new, CONCAT('เพิ่มผู้ใช้งาน ', v_id, ' (', p_name, ') เรียบร้อยแล้ว'),
-                   CONCAT('บันทึกผู้ใช้งาน ', v_id, ' เรียบร้อยแล้ว')) AS message;
+         CONCAT(IF(v_new, CONCAT('เพิ่มผู้ใช้งาน ', v_id, ' (', p_name, ') เรียบร้อยแล้ว'),
+                          CONCAT('บันทึกผู้ใช้งาน ', v_id, ' เรียบร้อยแล้ว')),
+                IF(v_cancel > 0, CONCAT(' — ยกเลิกการจองที่ยังไม่เดินทาง ', v_cancel, ' รายการ'), '')) AS message;
 END$$
 
 DROP PROCEDURE IF EXISTS api_users_delete$$
@@ -1854,13 +1926,15 @@ END$$
 DROP PROCEDURE IF EXISTS api_trips_list$$
 -- p_date ว่าง = ทุกวัน (หน้าเว็บส่งวันนี้เป็นค่าเริ่มต้น) — แสดงไม่เกิน 500 รอบ
 -- p_q = ค้นรหัสรอบ (บางส่วนได้) — มีค่าแล้วไม่กรองวันที่ เพราะรหัสรอบไม่ซ้ำกันอยู่แล้ว
+-- p_driver_name = ค้นชื่อคนขับ (บางส่วนได้) — ใช้ร่วมกับตัวกรองอื่นและวันที่ได้
 CREATE PROCEDURE api_trips_list(IN p_uid VARCHAR(10), IN p_date VARCHAR(20), IN p_route VARCHAR(10),
                                 IN p_driver VARCHAR(10), IN p_vehicle VARCHAR(10), IN p_status VARCHAR(30),
-                                IN p_q VARCHAR(30))
+                                IN p_q VARCHAR(30), IN p_driver_name VARCHAR(100))
 BEGIN
   CALL sp_require(p_uid, 'SC06', '');
   SELECT * FROM v_trip_details
    WHERE (mut_blank(p_q) OR UPPER(trip_id) LIKE CONCAT('%', UPPER(TRIM(p_q)), '%'))
+     AND (mut_blank(p_driver_name) OR driver_name LIKE CONCAT('%', TRIM(p_driver_name), '%'))
      AND (NOT mut_blank(p_q) OR mut_is_date(p_date) = 0 OR trip_date = p_date)
      AND (mut_blank(p_route) OR route_id = p_route)
      AND (mut_blank(p_driver) OR driver_id = p_driver)
@@ -1890,9 +1964,10 @@ BEGIN
     FROM vehicles v JOIN vehicle_types vt ON vt.vehicle_type_id = v.vehicle_type_id
    WHERE v.status = 'พร้อมใช้งาน' OR v.vehicle_id = v_vehicle
    ORDER BY v.plate_no;
-  SELECT u.user_id, u.name, p.position_name
+  SELECT u.user_id, u.name, p.position_name, u.status
     FROM employees e JOIN users u ON u.user_id = e.user_id JOIN positions p ON p.position_id = e.position_id
-   WHERE e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12') OR e.user_id = v_driver
+   WHERE (e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12') AND u.status = 'ใช้งาน')
+      OR e.user_id = v_driver
    ORDER BY u.name;
 END$$
 
@@ -1944,8 +2019,9 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'vehicle_id|กรุณาเลือกรถที่พร้อมใช้งาน';
   ELSEIF v_vstatus <> 'พร้อมใช้งาน' AND (v_new OR p_vehicle_id <> v_old_vehicle) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'vehicle_id|รถคันนี้ไม่อยู่ในสถานะพร้อมใช้งาน';
-  ELSEIF NOT EXISTS (SELECT 1 FROM employees e WHERE e.user_id = p_driver_id
-                        AND (e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12')
+  -- คนขับใหม่ต้องมีสิทธิ์ SC12 และสถานะ "ใช้งาน" (คนขับเดิมของรอบคงไว้ได้)
+  ELSEIF NOT EXISTS (SELECT 1 FROM employees e JOIN users u ON u.user_id = e.user_id WHERE e.user_id = p_driver_id
+                        AND ((e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12') AND u.status = 'ใช้งาน')
                              OR e.user_id = COALESCE(v_old_driver, '-'))) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'driver_id|กรุณาเลือกคนขับ';
   ELSEIF COALESCE(v_status, '') NOT IN ('เปิด', 'กำลังเดินทาง', 'เสร็จสิ้น', 'ยกเลิก') THEN

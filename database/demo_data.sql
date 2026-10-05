@@ -7,7 +7,7 @@
 USE mut_shuttle;
 
 -- มานี = นักศึกษา (ผู้ใช้บริการ ไม่ใช่พนักงาน)
-INSERT INTO users VALUES
+INSERT INTO users (user_id, name, email, username, password_hash, department_id) VALUES
   ('U005', 'มานี มีนา', 'manee@mail.com', 'manee', SHA2('1234', 256), 'D003');
 
 -- รอบในอดีต (เสร็จสิ้นแล้ว) ตามตารางเวลาเดินรถ

@@ -33,6 +33,7 @@ function toError(err) {
     const m = String(err.sqlMessage).match(/^(!?[a-z_]+)\|([\s\S]*)$/);
     if (!m) return { status: 400, error: err.sqlMessage };
     if (m[1] === '!denied') return { status: 403, error: m[2] };
+    if (m[1] === '!login') return { status: 401, error: m[2], login: true };   // บัญชีถูกปิดการใช้งาน
     if (m[1] === '!notfound') return { status: 404, error: m[2] };
     return { status: 400, error: m[2], field: m[1] };
   }
@@ -56,7 +57,7 @@ function toError(err) {
 
 const sendError = (res, err) => {
   const e = toError(err);
-  res.status(e.status).json({ error: e.error, field: e.field || null });
+  res.status(e.status).json({ error: e.error, field: e.field || null, login: e.login || undefined });
 };
 
 const app = express();

@@ -44,7 +44,9 @@ CREATE TABLE users (
   username      VARCHAR(50)  NOT NULL,
   password_hash VARCHAR(255) NOT NULL,                 -- เก็บเป็น hash เท่านั้น
   department_id VARCHAR(10)  NOT NULL,                 -- รหัสแผนก (FK)
+  status        VARCHAR(20)  NOT NULL DEFAULT 'ใช้งาน', -- ใช้งาน / ลาพัก / ระงับชั่วคราว / ลาออก
   PRIMARY KEY (user_id),
+  CONSTRAINT ck_users_status CHECK (status IN ('ใช้งาน', 'ลาพัก', 'ระงับชั่วคราว', 'ลาออก')),
   UNIQUE KEY uq_users_email (email),
   UNIQUE KEY uq_users_username (username),
   CONSTRAINT fk_users_department FOREIGN KEY (department_id) REFERENCES departments (department_id)
@@ -623,7 +625,7 @@ INSERT INTO screens VALUES
 
 -- password ตัวอย่าง = '1234' (ในระบบจริงให้ hash ด้วย bcrypt/argon2 ที่ฝั่งแอป)
 -- U001 = ผู้ดูแลระบบ / U002–U004 = คนขับตามเอกสาร MINI
-INSERT INTO users VALUES
+INSERT INTO users (user_id, name, email, username, password_hash, department_id) VALUES
   ('U001', 'ผู้ดูแลระบบ', 'admin@mail.com',   'admin',   SHA2('1234', 256), 'D001'),
   ('U002', 'สมชาย ใจดี',  'somchai@mail.com', 'somchai', SHA2('1234', 256), 'D002'),
   ('U003', 'สมหญิง ใจรัก', 'somying@mail.com', 'somying', SHA2('1234', 256), 'D002'),

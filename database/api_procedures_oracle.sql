@@ -32,6 +32,34 @@ BEGIN
 END;
 /
 
+-- สถานะบัญชี (users.status) — บัญชีเดิมทั้งหมดเป็น "ใช้งาน"
+DECLARE
+  v NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO v FROM user_tab_columns WHERE table_name = 'USERS' AND column_name = 'STATUS';
+  IF v = 0 THEN
+    EXECUTE IMMEDIATE q'[ALTER TABLE users ADD (status VARCHAR2(20 CHAR) DEFAULT 'ใช้งาน' NOT NULL)]';
+    EXECUTE IMMEDIATE q'[ALTER TABLE users ADD CONSTRAINT ck_users_status
+                         CHECK (status IN ('ใช้งาน', 'ลาพัก', 'ระงับชั่วคราว', 'ลาออก'))]';
+  END IF;
+END;
+/
+
+-- ตัดสถานะ "จบการศึกษา" (นักศึกษาที่จบแล้วใช้งานต่อได้) — บัญชีที่เคยตั้งไว้กลับเป็น "ใช้งาน"
+DECLARE
+  v NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO v FROM user_constraints
+   WHERE table_name = 'USERS' AND constraint_name = 'CK_USERS_STATUS' AND search_condition_vc LIKE '%จบการศึกษา%';
+  IF v > 0 THEN
+    EXECUTE IMMEDIATE q'[UPDATE users SET status = 'ใช้งาน' WHERE status = 'จบการศึกษา']';
+    EXECUTE IMMEDIATE 'ALTER TABLE users DROP CONSTRAINT ck_users_status';
+    EXECUTE IMMEDIATE q'[ALTER TABLE users ADD CONSTRAINT ck_users_status
+                         CHECK (status IN ('ใช้งาน', 'ลาพัก', 'ระงับชั่วคราว', 'ลาออก'))]';
+  END IF;
+END;
+/
+
 
 -- =====================================================================
 -- 1) ฟังก์ชันช่วยทั่วไป
@@ -212,13 +240,22 @@ END;
 -- =====================================================================
 
 -- p_action = NULL (เข้าถึง) / 'add' / 'edit' / 'delete'
+-- บัญชีใช้งานได้ (login/จอง/ใช้สิทธิ์): สถานะ ใช้งาน หรือ ลาพัก — ระงับชั่วคราว / ลาออก = ใช้ไม่ได้
+CREATE OR REPLACE FUNCTION mut_active(p_uid IN VARCHAR2) RETURN NUMBER IS
+  v NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO v FROM users WHERE user_id = p_uid AND status IN ('ใช้งาน', 'ลาพัก');
+  RETURN v;
+END;
+/
+
 CREATE OR REPLACE FUNCTION mut_can(p_uid IN VARCHAR2, p_screen IN VARCHAR2, p_action IN VARCHAR2) RETURN NUMBER IS
   v NUMBER;
 BEGIN
   SELECT MAX(CASE p_action WHEN 'add' THEN p.can_add WHEN 'edit' THEN p.can_edit WHEN 'delete' THEN p.can_delete ELSE 1 END)
     INTO v
     FROM employees e JOIN permissions p ON p.position_id = e.position_id AND p.screen_id = p_screen
-   WHERE e.user_id = p_uid;
+   WHERE e.user_id = p_uid AND mut_active(p_uid) = 1;
   RETURN NVL(v, 0);
 END;
 /
@@ -228,7 +265,7 @@ CREATE OR REPLACE FUNCTION mut_has_admin(p_uid IN VARCHAR2) RETURN NUMBER IS
   v NUMBER;
 BEGIN
   SELECT COUNT(*) INTO v FROM employees e JOIN permissions p ON p.position_id = e.position_id
-   WHERE e.user_id = p_uid
+   WHERE e.user_id = p_uid AND mut_active(p_uid) = 1
      AND p.screen_id IN ('SC01','SC02','SC03','SC04','SC05','SC06','SC07','SC08','SC09','SC10','SC11');
   RETURN CASE WHEN v > 0 THEN 1 ELSE 0 END;
 END;
@@ -284,6 +321,15 @@ CREATE OR REPLACE PROCEDURE sp_require_admin(p_uid IN VARCHAR2) IS
 BEGIN
   IF p_uid IS NULL OR mut_has_admin(p_uid) = 0 THEN
     mut_err('!denied|ตำแหน่งของคุณไม่มีสิทธิ์ใช้งานหลังบ้าน');
+  END IF;
+END;
+/
+
+-- บัญชีต้องใช้งานได้ ไม่ผ่าน → !login (server.js ตอบ 401 → หน้าเว็บพาไปหน้า login)
+CREATE OR REPLACE PROCEDURE sp_require_active(p_uid IN VARCHAR2) IS
+BEGIN
+  IF p_uid IS NULL OR mut_active(p_uid) = 0 THEN
+    mut_err('!login|บัญชีของคุณถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
   END IF;
 END;
 /
@@ -419,7 +465,8 @@ END;
 CREATE OR REPLACE PROCEDURE sp_trips(
   p_trip IN VARCHAR2, p_driver IN VARCHAR2, p_from IN DATE, p_to IN DATE, p_route IN VARCHAR2,
   p_vehicle IN VARCHAR2, p_status IN VARCHAR2, p_no_cancelled IN NUMBER, p_order IN VARCHAR2, p_limit IN NUMBER,
-  p_q IN VARCHAR2 DEFAULT NULL) IS   -- p_q = ค้นรหัสรอบบางส่วน (ไม่สนตัวพิมพ์)
+  p_q IN VARCHAR2 DEFAULT NULL,      -- p_q = ค้นรหัสรอบบางส่วน (ไม่สนตัวพิมพ์)
+  p_driver_name IN VARCHAR2 DEFAULT NULL) IS   -- ค้นชื่อคนขับบางส่วน
   rc SYS_REFCURSOR;
 BEGIN
   OPEN rc FOR
@@ -436,6 +483,7 @@ BEGIN
           JOIN users u          ON u.user_id = tr.driver_id
          WHERE (p_trip IS NULL OR tr.trip_id = p_trip)
            AND (p_q IS NULL OR UPPER(tr.trip_id) LIKE '%' || UPPER(p_q) || '%')
+           AND (p_driver_name IS NULL OR UPPER(u.name) LIKE '%' || UPPER(p_driver_name) || '%')
            AND (p_driver IS NULL OR tr.driver_id = p_driver)
            AND (p_from IS NULL OR tr.trip_date >= p_from)
            AND (p_to IS NULL OR tr.trip_date <= p_to)
@@ -468,6 +516,7 @@ END;
 CREATE OR REPLACE PROCEDURE sp_login(p_username IN VARCHAR2, p_password IN VARCHAR2) IS
   v_id   users.user_id%TYPE;
   v_hash users.password_hash%TYPE;
+  v_status users.status%TYPE;
   v_name VARCHAR2(400) := TRIM(p_username);
   rc     SYS_REFCURSOR;
 BEGIN
@@ -477,9 +526,11 @@ BEGIN
   IF p_password IS NULL THEN
     mut_err('password|กรุณากรอก password');
   END IF;
-  SELECT MAX(user_id), MAX(password_hash) INTO v_id, v_hash FROM users WHERE username = v_name;
+  SELECT MAX(user_id), MAX(password_hash), MAX(status) INTO v_id, v_hash, v_status FROM users WHERE username = v_name;
   IF v_id IS NULL THEN
     mut_err('username|ไม่พบ username นี้ในระบบ');
+  ELSIF mut_active(v_id) = 0 THEN
+    mut_err('username|เข้าสู่ระบบไม่ได้ — บัญชีนี้อยู่ในสถานะ "' || v_status || '" กรุณาติดต่อผู้ดูแลระบบ');
   END IF;
 
   IF v_hash LIKE '$2%' THEN
@@ -549,6 +600,7 @@ CREATE OR REPLACE PROCEDURE api_me(p_uid IN VARCHAR2) IS
   rc1 SYS_REFCURSOR;
   rc2 SYS_REFCURSOR;
 BEGIN
+  sp_require_active(p_uid);   -- บัญชีถูกปิดขณะ login อยู่ → กลับหน้า login ทันทีที่เปิดหน้าถัดไป
   OPEN rc1 FOR
     SELECT u.user_id, u.name, u.username, e.position_id,
            mut_can(u.user_id, 'SC12', NULL) AS is_driver, mut_has_admin(u.user_id) AS has_admin,
@@ -691,6 +743,7 @@ CREATE OR REPLACE PROCEDURE api_book(p_uid IN VARCHAR2, p_trip IN VARCHAR2, p_bo
   v_qr      VARCHAR2(64);
   rc        SYS_REFCURSOR;
 BEGIN
+  sp_require_active(p_uid);
   IF mut_is_int(p_seats) = 0 THEN
     mut_err('seats|จองได้ 1–4 ที่นั่งต่อรายการ');
   END IF;
@@ -1030,7 +1083,8 @@ BEGIN
   DBMS_SQL.RETURN_RESULT(rc3);
   -- คนขับ = พนักงานที่ตำแหน่งมีสิทธิ์หน้าจองานคนขับ (SC12) — ใช้ในหน้ารอบ/ตารางเวลา จึงให้เฉพาะผู้มีสิทธิ์ SC06
   v_trips := mut_can(p_uid, 'SC06', NULL);
-  OPEN rc4 FOR SELECT u.user_id, u.name, p.position_name
+  -- status: หน้าเว็บใช้ทุกคนในตัวกรอง (ดูรอบย้อนหลังของคนที่ลาออก) แต่ให้เลือกในฟอร์มเฉพาะ "ใช้งาน"
+  OPEN rc4 FOR SELECT u.user_id, u.name, p.position_name, u.status
                  FROM employees e JOIN users u ON u.user_id = e.user_id JOIN positions p ON p.position_id = e.position_id
                 WHERE e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12')
                   AND v_trips = 1
@@ -1535,9 +1589,10 @@ BEGIN
   IF v_n = 0 THEN mut_err('route_id|กรุณาเลือกเส้นทาง'); END IF;
   IF v_time IS NULL THEN mut_err('depart_time|กรุณาระบุเวลาออก'); END IF;
   IF p_run_days IS NULL OR p_run_days NOT IN ('12345', '123456', '0123456', '06') THEN mut_err('run_days|กรุณาเลือกวันที่วิ่ง'); END IF;
-  SELECT COUNT(*) INTO v_n FROM employees e
-   WHERE e.user_id = p_driver_id AND e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12');
-  IF v_n = 0 THEN mut_err('driver_id|กรุณาเลือกคนขับ'); END IF;
+  SELECT COUNT(*) INTO v_n FROM employees e JOIN users u ON u.user_id = e.user_id
+   WHERE e.user_id = p_driver_id AND e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12')
+     AND u.status = 'ใช้งาน';
+  IF v_n = 0 THEN mut_err('driver_id|กรุณาเลือกคนขับ (เฉพาะคนขับที่สถานะ "ใช้งาน")'); END IF;
   SELECT COUNT(*) INTO v_n FROM vehicles WHERE vehicle_id = p_vehicle_id;
   IF v_n = 0 THEN mut_err('vehicle_id|กรุณาเลือกรถ'); END IF;
   IF p_active IS NULL OR p_active NOT IN ('0', '1') THEN mut_err('active|กรุณาเลือกสถานะ'); END IF;
@@ -1629,14 +1684,15 @@ END;
 -- =====================================================================
 
 -- p_type: employee = เฉพาะพนักงาน / user = เฉพาะผู้ใช้บริการทั่วไป
+-- p_status: ว่าง = ซ่อนบัญชีที่ ลาออก / all = ทั้งหมด / อื่นๆ = เฉพาะสถานะนั้น
 CREATE OR REPLACE PROCEDURE api_users_list(p_uid IN VARCHAR2, p_q IN VARCHAR2, p_department IN VARCHAR2,
-                                           p_position IN VARCHAR2, p_type IN VARCHAR2) IS
+                                           p_position IN VARCHAR2, p_type IN VARCHAR2, p_status IN VARCHAR2) IS
   v_q VARCHAR2(200) := TRIM(p_q);
   rc  SYS_REFCURSOR;
 BEGIN
   sp_require(p_uid, 'SC07', NULL);
   OPEN rc FOR
-    SELECT u.user_id, u.name, u.email, u.username, d.department_name, e.phone, p.position_name,
+    SELECT u.user_id, u.name, u.email, u.username, d.department_name, e.phone, p.position_name, u.status,
            CASE WHEN e.user_id IS NOT NULL THEN 1 ELSE 0 END AS is_employee
       FROM users u
       JOIN departments d ON d.department_id = u.department_id
@@ -1648,6 +1704,8 @@ BEGIN
        AND (p_position IS NULL OR e.position_id = p_position)
        AND (NVL(p_type, '-') <> 'employee' OR e.user_id IS NOT NULL)
        AND (NVL(p_type, '-') <> 'user' OR e.user_id IS NULL)
+       AND (CASE WHEN p_status IS NULL THEN CASE WHEN u.status = 'ลาออก' THEN 0 ELSE 1 END
+                 WHEN p_status = 'all' OR u.status = p_status THEN 1 ELSE 0 END) = 1
      ORDER BY u.user_id;
   DBMS_SQL.RETURN_RESULT(rc);
 END;
@@ -1666,7 +1724,7 @@ BEGIN
     mut_err('!denied|ไม่สามารถจัดการผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าคุณได้');
   END IF;
   OPEN rc FOR
-    SELECT u.user_id, u.name, u.email, u.username, u.department_id, e.phone, e.position_id,
+    SELECT u.user_id, u.name, u.email, u.username, u.department_id, u.status, e.phone, e.position_id,
            CASE WHEN e.user_id IS NOT NULL THEN 1 ELSE 0 END AS is_employee
       FROM users u LEFT JOIN employees e ON e.user_id = u.user_id WHERE u.user_id = p_id;
   DBMS_SQL.RETURN_RESULT(rc);
@@ -1674,10 +1732,12 @@ END;
 /
 
 -- พนักงาน = subclass ของผู้ใช้งาน (+ เบอร์โทร + ตำแหน่ง) / password ว่างตอนแก้ไข = ไม่เปลี่ยน
+-- p_status: ใช้งาน / ลาพัก (พนักงาน) / ระงับชั่วคราว / ลาออก (พนักงาน) — ว่าง = คงเดิม (ใหม่ = ใช้งาน)
 CREATE OR REPLACE PROCEDURE api_users_save(p_uid IN VARCHAR2, p_id IN VARCHAR2, p_name IN VARCHAR2, p_email IN VARCHAR2,
                                            p_username IN VARCHAR2, p_password IN VARCHAR2, p_confirm IN VARCHAR2,
                                            p_department_id IN VARCHAR2,
-                                           p_is_employee IN VARCHAR2, p_phone IN VARCHAR2, p_position_id IN VARCHAR2) IS
+                                           p_is_employee IN VARCHAR2, p_phone IN VARCHAR2, p_position_id IN VARCHAR2,
+                                           p_status IN VARCHAR2) IS
   v_new      BOOLEAN := p_id IS NULL;
   v_emp      BOOLEAN := NVL(p_is_employee, '0') IN ('1', 'true', 'on');
   v_name     VARCHAR2(400) := TRIM(p_name);
@@ -1691,12 +1751,16 @@ CREATE OR REPLACE PROCEDURE api_users_save(p_uid IN VARCHAR2, p_id IN VARCHAR2, 
   v_old_pos  VARCHAR2(10);
   v_new_sc12 NUMBER;
   v_pos_dep  VARCHAR2(10);
+  v_old_st   users.status%TYPE;
+  v_status   VARCHAR2(40 CHAR) := TRIM(p_status);
+  v_closed   BOOLEAN;
+  v_cancel   NUMBER := 0;
   e_child    EXCEPTION;
   PRAGMA EXCEPTION_INIT(e_child, -2292);
 BEGIN
   sp_require(p_uid, 'SC07', CASE WHEN v_new THEN 'add' ELSE 'edit' END);
   IF NOT v_new THEN
-    SELECT COUNT(*) INTO v_n FROM users WHERE user_id = p_id;
+    SELECT COUNT(*), MAX(status) INTO v_n, v_old_st FROM users WHERE user_id = p_id;
     IF v_n = 0 THEN mut_err('!notfound|ไม่พบผู้ใช้งาน'); END IF;
     -- แก้ไข/รีเซ็ต password ผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าตัวเองไม่ได้
     SELECT MAX(position_id) INTO v_old_pos FROM employees WHERE user_id = p_id;
@@ -1707,6 +1771,9 @@ BEGIN
   SELECT COUNT(*) INTO v_dep FROM departments WHERE department_id = p_department_id;
   SELECT COUNT(*), MAX(department_id) INTO v_pos, v_pos_dep FROM positions WHERE position_id = p_position_id;
   SELECT COUNT(*) INTO v_new_sc12 FROM permissions WHERE position_id = p_position_id AND screen_id = 'SC12';
+  v_status := NVL(v_status, NVL(v_old_st, 'ใช้งาน'));
+  -- ปิดบัญชี = login/จองไม่ได้ (ลาพัก ยังใช้งานได้แต่ไม่ถูกเลือกเป็นคนขับ)
+  v_closed := v_status IN ('ระงับชั่วคราว', 'ลาออก') AND v_status <> NVL(v_old_st, '-');
 
   IF v_name IS NULL THEN
     mut_err('name|กรุณากรอกชื่อ');
@@ -1737,6 +1804,14 @@ BEGIN
   ELSIF NOT v_new AND v_emp AND NVL(p_position_id, '-') <> NVL(v_old_pos, '-') AND mut_driver_busy(p_id) = 1
         AND v_new_sc12 = 0 THEN
     mut_err('position_id|เปลี่ยนเป็นตำแหน่งนี้ไม่ได้ เนื่องจากผู้ใช้นี้ยังมีรอบ/ตารางเวลาที่ต้องขับ แต่ตำแหน่งใหม่ไม่มีสิทธิ์งานคนขับ');
+  ELSIF v_status NOT IN ('ใช้งาน', 'ลาพัก', 'ระงับชั่วคราว', 'ลาออก') THEN
+    mut_err('status|กรุณาเลือกสถานะบัญชี');
+  ELSIF NOT v_emp AND v_status IN ('ลาพัก', 'ลาออก') THEN
+    mut_err('status|สถานะ "' || v_status || '" ใช้กับพนักงานเท่านั้น');
+  ELSIF NOT v_new AND p_id = p_uid AND v_status <> v_old_st THEN
+    mut_err('status|ไม่สามารถเปลี่ยนสถานะบัญชีของตัวเองได้');
+  ELSIF NOT v_new AND v_status <> 'ใช้งาน' AND v_status <> v_old_st AND mut_driver_busy(p_id) = 1 THEN
+    mut_err('status|เปลี่ยนสถานะไม่ได้ เนื่องจากผู้ใช้นี้ยังมีรอบ/ตารางเวลาที่ต้องขับ — เปลี่ยนคนขับก่อน');
   END IF;
   SELECT COUNT(*) INTO v_n FROM users WHERE email = v_email AND user_id <> NVL(p_id, '-');
   IF v_n > 0 THEN mut_err('email|email นี้ถูกใช้แล้ว'); END IF;
@@ -1746,12 +1821,21 @@ BEGIN
   IF v_new THEN
     SELECT NVL(MAX(TO_NUMBER(SUBSTR(user_id, 2))), 0) + 1 INTO v_n FROM users WHERE REGEXP_LIKE(user_id, '^U[0-9]+$');
     v_id := mut_fmt_id('U', v_n, 3);
-    INSERT INTO users (user_id, name, email, username, password_hash, department_id)
-    VALUES (v_id, v_name, v_email, v_username, mut_hash_password(p_password), p_department_id);
+    INSERT INTO users (user_id, name, email, username, password_hash, department_id, status)
+    VALUES (v_id, v_name, v_email, v_username, mut_hash_password(p_password), p_department_id, v_status);
   ELSE
     v_id := p_id;
-    UPDATE users SET name = v_name, email = v_email, username = v_username, department_id = p_department_id
+    UPDATE users SET name = v_name, email = v_email, username = v_username, department_id = p_department_id,
+                     status = v_status
      WHERE user_id = v_id;
+    -- ปิดบัญชี → ยกเลิกการจองที่ยังไม่ได้เดินทาง (คืนที่นั่ง)
+    IF v_closed THEN
+      UPDATE booking_items bi SET bi.status = 'ยกเลิก'
+       WHERE bi.status = 'ยืนยัน' AND bi.checkin_at IS NULL
+         AND bi.booking_id IN (SELECT booking_id FROM bookings WHERE user_id = v_id)
+         AND bi.trip_id IN (SELECT trip_id FROM trips WHERE status = 'เปิด');
+      v_cancel := SQL%ROWCOUNT;
+    END IF;
     IF p_password IS NOT NULL THEN
       UPDATE users SET password_hash = mut_hash_password(p_password) WHERE user_id = v_id;
     END IF;
@@ -1767,7 +1851,8 @@ BEGIN
   END IF;
 
   sp_message(CASE WHEN v_new THEN 'เพิ่มผู้ใช้งาน ' || v_id || ' (' || v_name || ') เรียบร้อยแล้ว'
-                  ELSE 'บันทึกผู้ใช้งาน ' || v_id || ' เรียบร้อยแล้ว' END, v_id);
+                  ELSE 'บันทึกผู้ใช้งาน ' || v_id || ' เรียบร้อยแล้ว' END
+             || CASE WHEN v_cancel > 0 THEN ' — ยกเลิกการจองที่ยังไม่เดินทาง ' || v_cancel || ' รายการ' END, v_id);
 EXCEPTION
   WHEN e_child THEN
     mut_err('is_employee|ยกเลิกสถานะพนักงานไม่ได้ เนื่องจากเป็นคนขับในรอบการเดินรถ');
@@ -2076,14 +2161,15 @@ END;
 
 -- p_date ว่าง = ทุกวัน (หน้าเว็บส่งวันนี้เป็นค่าเริ่มต้น) — แสดงไม่เกิน 500 รอบ
 -- p_q = ค้นรหัสรอบ (บางส่วนได้) — มีค่าแล้วไม่กรองวันที่ เพราะรหัสรอบไม่ซ้ำกันอยู่แล้ว
+-- p_driver_name = ค้นชื่อคนขับ (บางส่วนได้) — ใช้ร่วมกับตัวกรองอื่นและวันที่ได้
 CREATE OR REPLACE PROCEDURE api_trips_list(p_uid IN VARCHAR2, p_date IN VARCHAR2, p_route IN VARCHAR2,
                                            p_driver IN VARCHAR2, p_vehicle IN VARCHAR2, p_status IN VARCHAR2,
-                                           p_q IN VARCHAR2) IS
+                                           p_q IN VARCHAR2, p_driver_name IN VARCHAR2) IS
   v_q    VARCHAR2(30) := TRIM(p_q);
   v_date DATE := CASE WHEN v_q IS NULL THEN mut_to_date(p_date) END;
 BEGIN
   sp_require(p_uid, 'SC06', NULL);
-  sp_trips(NULL, p_driver, v_date, v_date, p_route, p_vehicle, p_status, 0, 'date_desc', 500, v_q);
+  sp_trips(NULL, p_driver, v_date, v_date, p_route, p_vehicle, p_status, 0, 'date_desc', 500, v_q, TRIM(p_driver_name));
 END;
 /
 
@@ -2110,9 +2196,10 @@ BEGIN
      ORDER BY v.plate_no;
   DBMS_SQL.RETURN_RESULT(rc3);
   OPEN rc4 FOR
-    SELECT u.user_id, u.name, p.position_name
+    SELECT u.user_id, u.name, p.position_name, u.status
       FROM employees e JOIN users u ON u.user_id = e.user_id JOIN positions p ON p.position_id = e.position_id
-     WHERE e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12') OR e.user_id = v_driver
+     WHERE (e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12') AND u.status = 'ใช้งาน')
+        OR e.user_id = v_driver
      ORDER BY u.name;
   DBMS_SQL.RETURN_RESULT(rc4);
 END;
@@ -2163,9 +2250,11 @@ BEGIN
   ELSIF v_vstatus <> 'พร้อมใช้งาน' AND (v_new OR p_vehicle_id <> v_old_vehicle) THEN
     mut_err('vehicle_id|รถคันนี้ไม่อยู่ในสถานะพร้อมใช้งาน');
   END IF;
-  SELECT COUNT(*) INTO v_n FROM employees e
+  -- คนขับใหม่ต้องมีสิทธิ์ SC12 และสถานะ "ใช้งาน" (คนขับเดิมของรอบคงไว้ได้)
+  SELECT COUNT(*) INTO v_n FROM employees e JOIN users u ON u.user_id = e.user_id
    WHERE e.user_id = p_driver_id
-     AND (e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12') OR e.user_id = NVL(v_old_driver, '-'));
+     AND ((e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12') AND u.status = 'ใช้งาน')
+          OR e.user_id = NVL(v_old_driver, '-'));
   IF v_n = 0 THEN
     mut_err('driver_id|กรุณาเลือกคนขับ');
   ELSIF v_status IS NULL OR v_status NOT IN ('เปิด', 'กำลังเดินทาง', 'เสร็จสิ้น', 'ยกเลิก') THEN

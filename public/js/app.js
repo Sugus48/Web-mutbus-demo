@@ -82,6 +82,8 @@
     'เปิด': 'info', 'กำลังเดินทาง': 'accent', 'เสร็จสิ้น': 'neutral',
     'พร้อมใช้งาน': 'success', 'ซ่อมบำรุง': 'warning', 'ไม่พร้อมใช้งาน': 'danger',
     'ที่นั่งเต็ม': 'danger', 'ใช้งาน': 'success', 'หยุดใช้งาน': 'neutral',
+    // สถานะบัญชีผู้ใช้
+    'ลาพัก': 'warning', 'ระงับชั่วคราว': 'danger', 'ลาออก': 'neutral',
   };
   const badge = (status) => `<span class="badge badge-${BADGE[status] || 'neutral'}">${esc(status)}</span>`;
 
