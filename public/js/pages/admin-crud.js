@@ -24,6 +24,7 @@
     label: `${v.plate_no} ${v.type_name} ${v.seat_count} ที่นั่ง${v.status === 'พร้อมใช้งาน' ? '' : ` (${v.status})`}`,
   }));
   const driverOptions = (lk) => lk.drivers.map((u) => ({ value: u.user_id, label: u.name }));
+  const departmentOptions = (lk) => lk.departments.map((d) => ({ value: d.department_id, label: d.department_name }));
 
   const RESOURCES = {
     // 10.3 แผนก
@@ -43,10 +44,15 @@
       columns: [
         { key: 'position_id', label: 'รหัสตำแหน่ง' },
         { key: 'position_name', label: 'ชื่อตำแหน่ง' },
+        { key: 'department_name', label: 'แผนก', fmt: (r) => r.department_name || 'ทุกแผนก' },
         { key: 'employee_count', label: 'จำนวนพนักงาน', align: 'right' },
         { key: 'screen_count', label: 'หน้าจอที่เข้าถึงได้', align: 'right' },
       ],
-      fields: [{ name: 'position_name', label: 'ชื่อตำแหน่ง', type: 'text', required: true, max: 100 }],
+      fields: [
+        { name: 'position_name', label: 'ชื่อตำแหน่ง', type: 'text', required: true, max: 100 },
+        { name: 'department_id', label: 'แผนก', type: 'select', placeholder: '— ทุกแผนก —', options: departmentOptions,
+          hint: 'หน้าเพิ่ม/แก้ไขผู้ใช้งาน จะแสดงตำแหน่งนี้เฉพาะเมื่อเลือกแผนกนี้ (ทุกแผนก = แสดงเสมอ)' },
+      ],
       rowLinks: [{ label: 'กำหนดสิทธิ์', href: (r) => `/admin/permissions?position=${encodeURIComponent(r.position_id)}`, screen: 'SC10' }],
       nameOf: (r) => r.position_name,
       deleteWarning: 'สิทธิ์ทั้งหมดของตำแหน่งนี้จะถูกลบด้วย',
@@ -253,7 +259,7 @@
           const req = f.required ? 'required' : '';
           let input;
           if (f.type === 'select') {
-            input = `<select class="input" id="${f.name}" name="${f.name}" ${req}>${MUT.options(f.options(lk), 'value', 'label', v, `— เลือก${f.label} —`)}</select>`;
+            input = `<select class="input" id="${f.name}" name="${f.name}" ${req}>${MUT.options(f.options(lk), 'value', 'label', v, f.placeholder ?? `— เลือก${f.label} —`)}</select>`;
           } else if (f.type === 'textarea') {
             input = `<textarea class="input" id="${f.name}" name="${f.name}" ${f.max ? `maxlength="${f.max}"` : ''}>${esc(v)}</textarea>`;
           } else if (f.type === 'time') {

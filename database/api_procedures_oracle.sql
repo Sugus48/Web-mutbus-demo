@@ -16,6 +16,24 @@
 
 
 -- =====================================================================
+-- 0) ปรับโครงสร้างฐานข้อมูลเดิม (รันซ้ำได้ — ข้ามถ้ามีแล้ว)
+-- =====================================================================
+
+-- ตำแหน่งสังกัดแผนก (positions.department_id — NULL = ใช้ได้ทุกแผนก)
+DECLARE
+  v NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO v FROM user_tab_columns WHERE table_name = 'POSITIONS' AND column_name = 'DEPARTMENT_ID';
+  IF v = 0 THEN
+    EXECUTE IMMEDIATE 'ALTER TABLE positions ADD (department_id VARCHAR2(10 CHAR))';
+    EXECUTE IMMEDIATE 'ALTER TABLE positions ADD CONSTRAINT fk_positions_department
+                       FOREIGN KEY (department_id) REFERENCES departments (department_id)';
+  END IF;
+END;
+/
+
+
+-- =====================================================================
 -- 1) ฟังก์ชันช่วยทั่วไป
 -- =====================================================================
 
@@ -216,6 +234,35 @@ BEGIN
 END;
 /
 
+-- จัดการผู้ใช้ในตำแหน่งนี้ได้หรือไม่ (กันผู้มีสิทธิ์จัดการผู้ใช้ ยกระดับตัวเอง/ยึดบัญชีที่มีสิทธิ์สูงกว่า)
+-- ได้ = ตำแหน่งนั้นไม่มีสิทธิ์ใดเกินสิทธิ์ของผู้ใช้ / หรือผู้ใช้แก้ไขสิทธิ์ได้ (SC10 edit กำหนดสิทธิ์ตัวเองได้อยู่แล้ว)
+-- p_position NULL (ผู้ใช้บริการ ไม่ใช่พนักงาน) = ได้
+CREATE OR REPLACE FUNCTION mut_can_assign(p_uid IN VARCHAR2, p_position IN VARCHAR2) RETURN NUMBER IS
+  v NUMBER;
+BEGIN
+  IF mut_can(p_uid, 'SC10', 'edit') = 1 THEN
+    RETURN 1;
+  END IF;
+  SELECT COUNT(*) INTO v FROM permissions t
+   WHERE t.position_id = p_position
+     AND NOT EXISTS (SELECT 1 FROM employees e JOIN permissions m ON m.position_id = e.position_id AND m.screen_id = t.screen_id
+                      WHERE e.user_id = p_uid
+                        AND m.can_add >= t.can_add AND m.can_edit >= t.can_edit AND m.can_delete >= t.can_delete);
+  RETURN CASE WHEN v = 0 THEN 1 ELSE 0 END;
+END;
+/
+
+-- ยังมีงานขับ: เป็นคนขับในรอบตั้งแต่วันนี้ที่ยังไม่จบ หรือในตารางเวลาที่ใช้งานอยู่ (กันถอดสิทธิ์ SC12 แล้วรอบไม่มีคนขับเข้าได้)
+CREATE OR REPLACE FUNCTION mut_driver_busy(p_user IN VARCHAR2) RETURN NUMBER IS
+  v NUMBER;
+BEGIN
+  SELECT (SELECT COUNT(*) FROM trips WHERE driver_id = p_user AND trip_date >= TRUNC(SYSDATE) AND status IN ('เปิด', 'กำลังเดินทาง'))
+       + (SELECT COUNT(*) FROM trip_schedules WHERE driver_id = p_user AND active = 1)
+    INTO v FROM dual;
+  RETURN CASE WHEN v > 0 THEN 1 ELSE 0 END;
+END;
+/
+
 -- หน้าแรกหลัง login ตามสิทธิ์
 CREATE OR REPLACE FUNCTION mut_landing(p_uid IN VARCHAR2) RETURN VARCHAR2 IS
 BEGIN
@@ -371,7 +418,8 @@ END;
 -- ตัวกรองที่เป็น NULL = ไม่กรอง / p_order: 'date_desc' (วันที่ใหม่ก่อน) หรือ อื่นๆ (วันที่ เวลา เก่าก่อน)
 CREATE OR REPLACE PROCEDURE sp_trips(
   p_trip IN VARCHAR2, p_driver IN VARCHAR2, p_from IN DATE, p_to IN DATE, p_route IN VARCHAR2,
-  p_vehicle IN VARCHAR2, p_status IN VARCHAR2, p_no_cancelled IN NUMBER, p_order IN VARCHAR2, p_limit IN NUMBER) IS
+  p_vehicle IN VARCHAR2, p_status IN VARCHAR2, p_no_cancelled IN NUMBER, p_order IN VARCHAR2, p_limit IN NUMBER,
+  p_q IN VARCHAR2 DEFAULT NULL) IS   -- p_q = ค้นรหัสรอบบางส่วน (ไม่สนตัวพิมพ์)
   rc SYS_REFCURSOR;
 BEGIN
   OPEN rc FOR
@@ -387,6 +435,7 @@ BEGIN
           JOIN vehicle_types vt ON vt.vehicle_type_id = v.vehicle_type_id
           JOIN users u          ON u.user_id = tr.driver_id
          WHERE (p_trip IS NULL OR tr.trip_id = p_trip)
+           AND (p_q IS NULL OR UPPER(tr.trip_id) LIKE '%' || UPPER(p_q) || '%')
            AND (p_driver IS NULL OR tr.driver_id = p_driver)
            AND (p_from IS NULL OR tr.trip_date >= p_from)
            AND (p_to IS NULL OR tr.trip_date <= p_to)
@@ -820,6 +869,17 @@ BEGIN
   IF v_date <> TRUNC(SYSDATE) THEN
     mut_err('เริ่มการเดินทางได้เฉพาะรอบของวันนี้ — รอบนี้เดินรถวันที่ ' || TO_CHAR(v_date, 'DD/MM/YYYY'));
   END IF;
+  -- กันงานขับซ้อน: คนขับยังมีรอบอื่นที่ยังไม่ปิดงาน / รถยังวิ่งอยู่ในรอบอื่น
+  FOR c IN (SELECT trip_id FROM trips WHERE driver_id = p_uid AND status = 'กำลังเดินทาง' AND trip_id <> p_trip
+             ORDER BY trip_date, depart_time FETCH FIRST 1 ROWS ONLY) LOOP
+    mut_err('ยังมีรอบ ' || c.trip_id || ' ที่กำลังเดินทางอยู่ — ปิดงานรอบนั้นก่อนเริ่มรอบใหม่');
+  END LOOP;
+  FOR c IN (SELECT o.trip_id, u.name FROM trips t
+              JOIN trips o ON o.vehicle_id = t.vehicle_id AND o.trip_id <> t.trip_id AND o.status = 'กำลังเดินทาง'
+              JOIN users u ON u.user_id = o.driver_id
+             WHERE t.trip_id = p_trip FETCH FIRST 1 ROWS ONLY) LOOP
+    mut_err('รถคันนี้ยังอยู่ในรอบ ' || c.trip_id || ' ที่กำลังเดินทาง (คนขับ ' || c.name || ') — รอให้ปิดงานก่อน');
+  END LOOP;
   sp_start_trip(p_trip, p_uid);
   sp_message('เริ่มการเดินทางแล้ว — สแกน QR ผู้โดยสารได้เลย');
 END;
@@ -914,9 +974,12 @@ END;
 -- 9) หลังบ้าน: Dashboard + ตัวเลือกในฟอร์ม
 -- =====================================================================
 
--- ชุดที่ 1 = ตัวเลขสรุปวันนี้ / ชุดที่ 2 = รอบวันนี้ / ชุดที่ 3 = รายการจองล่าสุด 8 รายการ
+-- ชุดที่ 1 = ตัวเลขสรุปวันนี้ / ชุดที่ 2 = รอบวันนี้ (ต้องมีสิทธิ์ SC06) / ชุดที่ 3 = รายการจองล่าสุด 8 รายการ (ต้องมีสิทธิ์ SC02)
+-- ไม่มีสิทธิ์ = ชุดว่าง (เช่น คนขับที่ดูข้อมูลรถได้ ไม่ควรเห็นชื่อผู้โดยสาร)
 CREATE OR REPLACE PROCEDURE api_dashboard(p_uid IN VARCHAR2) IS
-  rc SYS_REFCURSOR;
+  rc       SYS_REFCURSOR;
+  rc_trips SYS_REFCURSOR;
+  rc_items SYS_REFCURSOR;
 BEGIN
   sp_require_admin(p_uid);
   OPEN rc FOR
@@ -935,8 +998,18 @@ BEGIN
       TO_CHAR(SYSDATE, 'YYYY-MM-DD')                                                           AS today
       FROM dual;
   DBMS_SQL.RETURN_RESULT(rc);
-  sp_trips(NULL, NULL, TRUNC(SYSDATE), TRUNC(SYSDATE), NULL, NULL, NULL, 0, NULL, NULL);
-  sp_items(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 'booked_desc', 8);
+  IF mut_can(p_uid, 'SC06', NULL) = 1 THEN
+    sp_trips(NULL, NULL, TRUNC(SYSDATE), TRUNC(SYSDATE), NULL, NULL, NULL, 0, NULL, NULL);
+  ELSE
+    OPEN rc_trips FOR SELECT NULL AS trip_id FROM dual WHERE 1 = 0;
+    DBMS_SQL.RETURN_RESULT(rc_trips);
+  END IF;
+  IF mut_can(p_uid, 'SC02', NULL) = 1 THEN
+    sp_items(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 'booked_desc', 8);
+  ELSE
+    OPEN rc_items FOR SELECT NULL AS booking_item_id FROM dual WHERE 1 = 0;
+    DBMS_SQL.RETURN_RESULT(rc_items);
+  END IF;
 END;
 /
 
@@ -945,6 +1018,7 @@ END;
 CREATE OR REPLACE PROCEDURE api_lookups(p_uid IN VARCHAR2) IS
   rc1 SYS_REFCURSOR; rc2 SYS_REFCURSOR; rc3 SYS_REFCURSOR; rc4 SYS_REFCURSOR;
   rc5 SYS_REFCURSOR; rc6 SYS_REFCURSOR; rc7 SYS_REFCURSOR; rc8 SYS_REFCURSOR;
+  v_trips NUMBER;
 BEGIN
   sp_require_admin(p_uid);
   OPEN rc1 FOR SELECT vehicle_type_id, type_name, seat_count FROM vehicle_types ORDER BY vehicle_type_id;
@@ -954,15 +1028,17 @@ BEGIN
   OPEN rc3 FOR SELECT v.vehicle_id, v.plate_no, v.status, vt.type_name, vt.seat_count
                  FROM vehicles v JOIN vehicle_types vt ON vt.vehicle_type_id = v.vehicle_type_id ORDER BY v.plate_no;
   DBMS_SQL.RETURN_RESULT(rc3);
-  -- คนขับ = พนักงานที่ตำแหน่งมีสิทธิ์หน้าจองานคนขับ (SC12)
+  -- คนขับ = พนักงานที่ตำแหน่งมีสิทธิ์หน้าจองานคนขับ (SC12) — ใช้ในหน้ารอบ/ตารางเวลา จึงให้เฉพาะผู้มีสิทธิ์ SC06
+  v_trips := mut_can(p_uid, 'SC06', NULL);
   OPEN rc4 FOR SELECT u.user_id, u.name, p.position_name
                  FROM employees e JOIN users u ON u.user_id = e.user_id JOIN positions p ON p.position_id = e.position_id
                 WHERE e.position_id IN (SELECT position_id FROM permissions WHERE screen_id = 'SC12')
+                  AND v_trips = 1
                 ORDER BY u.name;
   DBMS_SQL.RETURN_RESULT(rc4);
   OPEN rc5 FOR SELECT department_id, department_name FROM departments ORDER BY department_id;
   DBMS_SQL.RETURN_RESULT(rc5);
-  OPEN rc6 FOR SELECT position_id, position_name FROM positions ORDER BY position_id;
+  OPEN rc6 FOR SELECT position_id, position_name, department_id FROM positions ORDER BY position_id;
   DBMS_SQL.RETURN_RESULT(rc6);
   OPEN rc7 FOR SELECT stop_id, stop_name FROM stops ORDER BY stop_id;
   DBMS_SQL.RETURN_RESULT(rc7);
@@ -1035,6 +1111,8 @@ BEGIN
   sp_require(p_uid, 'SC08', 'delete');
   SELECT COUNT(*) INTO v_n FROM users WHERE department_id = p_id;
   IF v_n > 0 THEN mut_err('ลบไม่ได้ เนื่องจากมีผู้ใช้งาน ' || v_n || ' คนอยู่ในแผนกนี้'); END IF;
+  SELECT COUNT(*) INTO v_n FROM positions WHERE department_id = p_id;
+  IF v_n > 0 THEN mut_err('ลบไม่ได้ เนื่องจากมี ' || v_n || ' ตำแหน่งสังกัดแผนกนี้ — ย้ายตำแหน่งไปแผนกอื่นก่อน'); END IF;
   DELETE FROM departments WHERE department_id = p_id;
   sp_message('ลบแผนก ' || p_id || ' เรียบร้อยแล้ว');
 END;
@@ -1047,10 +1125,10 @@ CREATE OR REPLACE PROCEDURE api_positions_list(p_uid IN VARCHAR2, p_q IN VARCHAR
 BEGIN
   sp_require(p_uid, 'SC09', NULL);
   OPEN rc FOR
-    SELECT p.position_id, p.position_name,
+    SELECT p.position_id, p.position_name, p.department_id, d.department_name,
            (SELECT COUNT(*) FROM employees e WHERE e.position_id = p.position_id) AS employee_count,
            (SELECT COUNT(*) FROM permissions x WHERE x.position_id = p.position_id) AS screen_count
-      FROM positions p
+      FROM positions p LEFT JOIN departments d ON d.department_id = p.department_id
      WHERE v_q IS NULL OR p.position_id LIKE '%' || v_q || '%' OR p.position_name LIKE '%' || v_q || '%'
      ORDER BY p.position_id;
   DBMS_SQL.RETURN_RESULT(rc);
@@ -1069,24 +1147,38 @@ BEGIN
 END;
 /
 
-CREATE OR REPLACE PROCEDURE api_positions_save(p_uid IN VARCHAR2, p_id IN VARCHAR2, p_position_name IN VARCHAR2) IS
+-- p_department_id ว่าง = ใช้ได้ทุกแผนก
+CREATE OR REPLACE PROCEDURE api_positions_save(p_uid IN VARCHAR2, p_id IN VARCHAR2, p_position_name IN VARCHAR2,
+                                               p_department_id IN VARCHAR2) IS
   v_name VARCHAR2(400) := TRIM(p_position_name);
+  v_dep  VARCHAR2(10) := TRIM(p_department_id);
   v_id   VARCHAR2(10);
   v_n    NUMBER;
 BEGIN
   sp_require(p_uid, 'SC09', CASE WHEN p_id IS NULL THEN 'add' ELSE 'edit' END);
+  IF v_dep IS NOT NULL THEN
+    SELECT COUNT(*) INTO v_n FROM departments WHERE department_id = v_dep;
+  END IF;
   IF v_name IS NULL THEN
     mut_err('position_name|กรุณากรอกชื่อตำแหน่ง');
   ELSIF LENGTH(v_name) > 100 THEN
     mut_err('position_name|ชื่อตำแหน่งยาวได้ไม่เกิน 100 ตัวอักษร');
+  ELSIF v_dep IS NOT NULL AND v_n = 0 THEN
+    mut_err('department_id|ไม่พบแผนกที่เลือก');
   END IF;
   IF p_id IS NULL THEN
     SELECT NVL(MAX(TO_NUMBER(SUBSTR(position_id, 2))), 0) + 1 INTO v_n FROM positions WHERE REGEXP_LIKE(position_id, '^P[0-9]+$');
     v_id := mut_fmt_id('P', v_n, 2);
-    INSERT INTO positions (position_id, position_name) VALUES (v_id, v_name);
+    INSERT INTO positions (position_id, position_name, department_id) VALUES (v_id, v_name, v_dep);
     sp_message('เพิ่มตำแหน่ง ' || v_id || ' เรียบร้อยแล้ว', v_id);
   ELSE
-    UPDATE positions SET position_name = v_name WHERE position_id = p_id;
+    -- ย้ายตำแหน่งไปแผนกอื่น: พนักงานที่อยู่ในตำแหน่งนี้ต้องอยู่แผนกนั้นด้วย
+    SELECT COUNT(*) INTO v_n FROM employees e JOIN users u ON u.user_id = e.user_id
+     WHERE e.position_id = p_id AND v_dep IS NOT NULL AND u.department_id <> v_dep;
+    IF v_n > 0 THEN
+      mut_err('department_id|เปลี่ยนแผนกไม่ได้ เนื่องจากมีพนักงาน ' || v_n || ' คนในตำแหน่งนี้อยู่แผนกอื่น');
+    END IF;
+    UPDATE positions SET position_name = v_name, department_id = v_dep WHERE position_id = p_id;
     IF SQL%ROWCOUNT = 0 THEN mut_err('!notfound|ไม่พบตำแหน่ง'); END IF;
     sp_message('บันทึกตำแหน่ง ' || p_id || ' เรียบร้อยแล้ว', p_id);
   END IF;
@@ -1474,6 +1566,29 @@ BEGIN
         mut_err('driver_id|คนขับคนนี้มีงานในตารางเวลา ' || c.label);
       END IF;
     END LOOP;
+
+    -- รอบที่จัดเอง/แก้ไขเองตั้งแต่วันนี้ไป ที่ใช้รถ/คนขับเดียวกันในวันที่ตารางนี้วิ่งและเวลาทับกัน
+    -- (ไม่ตรวจ = sp_ensure_trips จะข้ามรอบของตารางนี้ไปเงียบๆ เพราะ trigger ปฏิเสธ)
+    FOR c IN (
+      SELECT t.trip_id || ' วันที่ ' || TO_CHAR(t.trip_date, 'DD/MM/YYYY') || ' ' || r.route_name || ' '
+             || SUBSTR(t.depart_time, 1, 5) || '–' || mut_time_add(t.depart_time, mut_route_minutes(t.route_id)) AS label,
+             CASE WHEN t.vehicle_id = p_vehicle_id THEN 'vehicle' ELSE 'driver' END AS kind
+        FROM trips t JOIN routes r ON r.route_id = t.route_id
+       WHERE t.trip_date >= TRUNC(SYSDATE) AND t.status <> 'ยกเลิก'
+         AND (t.schedule_id IS NULL OR t.schedule_id <> NVL(p_id, '-'))
+         AND NOT (t.route_id = p_route_id AND t.depart_time = v_time)   -- รอบเดียวกัน: sp_ensure_trips ไม่สร้างซ้ำอยู่แล้ว
+         AND (t.vehicle_id = p_vehicle_id OR t.driver_id = p_driver_id)
+         AND INSTR(p_run_days, TO_CHAR(mut_weekday(t.trip_date))) > 0
+         AND mut_minutes_of(t.depart_time) < v_end
+         AND v_start < mut_minutes_of(t.depart_time) + mut_route_minutes(t.route_id)
+       ORDER BY 2 DESC, t.trip_date, t.depart_time
+       FETCH FIRST 1 ROWS ONLY) LOOP
+      IF c.kind = 'vehicle' THEN
+        mut_err('vehicle_id|รถคันนี้ถูกใช้ในรอบ ' || c.label);
+      ELSE
+        mut_err('driver_id|คนขับคนนี้มีงานรอบ ' || c.label);
+      END IF;
+    END LOOP;
   END IF;
 
   IF p_id IS NULL THEN
@@ -1539,12 +1654,17 @@ END;
 /
 
 CREATE OR REPLACE PROCEDURE api_users_get(p_uid IN VARCHAR2, p_id IN VARCHAR2) IS
-  v_n NUMBER;
-  rc  SYS_REFCURSOR;
+  v_n   NUMBER;
+  v_pos VARCHAR2(10);
+  rc    SYS_REFCURSOR;
 BEGIN
   sp_require(p_uid, 'SC07', 'edit');
   SELECT COUNT(*) INTO v_n FROM users WHERE user_id = p_id;
   IF v_n = 0 THEN mut_err('!notfound|ไม่พบผู้ใช้งาน'); END IF;
+  SELECT MAX(position_id) INTO v_pos FROM employees WHERE user_id = p_id;
+  IF mut_can_assign(p_uid, v_pos) = 0 THEN
+    mut_err('!denied|ไม่สามารถจัดการผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าคุณได้');
+  END IF;
   OPEN rc FOR
     SELECT u.user_id, u.name, u.email, u.username, u.department_id, e.phone, e.position_id,
            CASE WHEN e.user_id IS NOT NULL THEN 1 ELSE 0 END AS is_employee
@@ -1555,18 +1675,22 @@ END;
 
 -- พนักงาน = subclass ของผู้ใช้งาน (+ เบอร์โทร + ตำแหน่ง) / password ว่างตอนแก้ไข = ไม่เปลี่ยน
 CREATE OR REPLACE PROCEDURE api_users_save(p_uid IN VARCHAR2, p_id IN VARCHAR2, p_name IN VARCHAR2, p_email IN VARCHAR2,
-                                           p_username IN VARCHAR2, p_password IN VARCHAR2, p_department_id IN VARCHAR2,
+                                           p_username IN VARCHAR2, p_password IN VARCHAR2, p_confirm IN VARCHAR2,
+                                           p_department_id IN VARCHAR2,
                                            p_is_employee IN VARCHAR2, p_phone IN VARCHAR2, p_position_id IN VARCHAR2) IS
   v_new      BOOLEAN := p_id IS NULL;
   v_emp      BOOLEAN := NVL(p_is_employee, '0') IN ('1', 'true', 'on');
   v_name     VARCHAR2(400) := TRIM(p_name);
   v_email    VARCHAR2(400) := TRIM(p_email);
   v_username VARCHAR2(400) := TRIM(p_username);
-  v_phone    VARCHAR2(400) := TRIM(p_phone);
+  v_phone    VARCHAR2(400) := REGEXP_REPLACE(TRIM(p_phone), '[ -]', '');   -- 081-234-5678 → 0812345678
   v_id       VARCHAR2(10);
   v_n        NUMBER;
   v_dep      NUMBER;
   v_pos      NUMBER;
+  v_old_pos  VARCHAR2(10);
+  v_new_sc12 NUMBER;
+  v_pos_dep  VARCHAR2(10);
   e_child    EXCEPTION;
   PRAGMA EXCEPTION_INIT(e_child, -2292);
 BEGIN
@@ -1574,9 +1698,15 @@ BEGIN
   IF NOT v_new THEN
     SELECT COUNT(*) INTO v_n FROM users WHERE user_id = p_id;
     IF v_n = 0 THEN mut_err('!notfound|ไม่พบผู้ใช้งาน'); END IF;
+    -- แก้ไข/รีเซ็ต password ผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าตัวเองไม่ได้
+    SELECT MAX(position_id) INTO v_old_pos FROM employees WHERE user_id = p_id;
+    IF mut_can_assign(p_uid, v_old_pos) = 0 THEN
+      mut_err('!denied|ไม่สามารถจัดการผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าคุณได้');
+    END IF;
   END IF;
   SELECT COUNT(*) INTO v_dep FROM departments WHERE department_id = p_department_id;
-  SELECT COUNT(*) INTO v_pos FROM positions WHERE position_id = p_position_id;
+  SELECT COUNT(*), MAX(department_id) INTO v_pos, v_pos_dep FROM positions WHERE position_id = p_position_id;
+  SELECT COUNT(*) INTO v_new_sc12 FROM permissions WHERE position_id = p_position_id AND screen_id = 'SC12';
 
   IF v_name IS NULL THEN
     mut_err('name|กรุณากรอกชื่อ');
@@ -1588,14 +1718,25 @@ BEGIN
     mut_err('username|username ใช้ a-z, 0-9, _ . - ความยาว 3–50 ตัวอักษร');
   ELSIF (v_new OR p_password IS NOT NULL) AND NVL(LENGTH(p_password), 0) < 4 THEN
     mut_err('password|password ต้องมีอย่างน้อย 4 ตัวอักษร');
+  ELSIF p_password IS NOT NULL AND (p_confirm IS NULL OR p_confirm <> p_password) THEN
+    mut_err('confirm|ยืนยัน password ไม่ตรงกัน');
   ELSIF v_dep = 0 THEN
     mut_err('department_id|กรุณาเลือกแผนก');
-  ELSIF v_emp AND (v_phone IS NULL OR NOT REGEXP_LIKE(v_phone, '^[0-9+ -]{6,20}$')) THEN
-    mut_err('phone|กรุณากรอกเบอร์โทร (ตัวเลข 6–20 หลัก)');
+  ELSIF v_emp AND (v_phone IS NULL OR NOT REGEXP_LIKE(v_phone, '^0[0-9]{9}$')) THEN
+    mut_err('phone|เบอร์โทรต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 (เช่น 0812345678)');
   ELSIF v_emp AND v_pos = 0 THEN
     mut_err('position_id|กรุณาเลือกตำแหน่ง');
+  ELSIF v_emp AND v_pos_dep IS NOT NULL AND v_pos_dep <> p_department_id THEN
+    mut_err('position_id|ตำแหน่งนี้ไม่อยู่ในแผนกที่เลือก');
   ELSIF NOT v_new AND p_id = p_uid AND NOT v_emp THEN
     mut_err('is_employee|ไม่สามารถยกเลิกสถานะพนักงานของตัวเองได้');
+  ELSIF NOT v_new AND p_id = p_uid AND NVL(p_position_id, '-') <> NVL(v_old_pos, '-') THEN
+    mut_err('position_id|ไม่สามารถเปลี่ยนตำแหน่งของตัวเองได้');
+  ELSIF v_emp AND mut_can_assign(p_uid, p_position_id) = 0 THEN
+    mut_err('position_id|ไม่สามารถกำหนดตำแหน่งที่มีสิทธิ์มากกว่าตำแหน่งของคุณได้');
+  ELSIF NOT v_new AND v_emp AND NVL(p_position_id, '-') <> NVL(v_old_pos, '-') AND mut_driver_busy(p_id) = 1
+        AND v_new_sc12 = 0 THEN
+    mut_err('position_id|เปลี่ยนเป็นตำแหน่งนี้ไม่ได้ เนื่องจากผู้ใช้นี้ยังมีรอบ/ตารางเวลาที่ต้องขับ แต่ตำแหน่งใหม่ไม่มีสิทธิ์งานคนขับ');
   END IF;
   SELECT COUNT(*) INTO v_n FROM users WHERE email = v_email AND user_id <> NVL(p_id, '-');
   IF v_n > 0 THEN mut_err('email|email นี้ถูกใช้แล้ว'); END IF;
@@ -1638,13 +1779,17 @@ END;
 CREATE OR REPLACE PROCEDURE api_users_delete(p_uid IN VARCHAR2, p_id IN VARCHAR2) IS
   v_bookings NUMBER;
   v_trips    NUMBER;
+  v_pos      VARCHAR2(10);
 BEGIN
   sp_require(p_uid, 'SC07', 'delete');
+  SELECT MAX(position_id) INTO v_pos FROM employees WHERE user_id = p_id;
   SELECT COUNT(*) INTO v_bookings FROM bookings WHERE user_id = p_id;
   SELECT (SELECT COUNT(*) FROM trips WHERE driver_id = p_id) + (SELECT COUNT(*) FROM trip_schedules WHERE driver_id = p_id)
     INTO v_trips FROM dual;
   IF p_id = p_uid THEN
     mut_err('ไม่สามารถลบบัญชีของตัวเองได้');
+  ELSIF mut_can_assign(p_uid, v_pos) = 0 THEN
+    mut_err('!denied|ไม่สามารถจัดการผู้ใช้ที่ตำแหน่งมีสิทธิ์มากกว่าคุณได้');
   ELSIF v_bookings > 0 THEN
     mut_err('ลบไม่ได้ เนื่องจากผู้ใช้งานนี้มีประวัติการจอง ' || v_bookings || ' รายการ');
   ELSIF v_trips > 0 THEN
@@ -1698,6 +1843,19 @@ BEGIN
     v_pos := INSTR(v_matrix, ';SC10=');
     IF v_pos = 0 OR SUBSTR(v_matrix, v_pos + 6, 1) <> '1' OR SUBSTR(v_matrix, v_pos + 8, 1) <> '1' THEN
       mut_err('ไม่สามารถถอดสิทธิ์ เข้าถึง/แก้ไข หน้าจอจัดการสิทธิ์ ของตำแหน่งตัวเองได้');
+    END IF;
+  END IF;
+
+  -- กันถอดสิทธิ์งานคนขับ (SC12) ขณะที่พนักงานในตำแหน่งนี้ยังมีรอบ/ตารางเวลาที่ต้องขับ
+  v_pos := INSTR(v_matrix, ';SC12=');
+  IF v_pos = 0 OR SUBSTR(v_matrix, v_pos + 6, 1) <> '1' THEN
+    SELECT COUNT(*) INTO v_has FROM permissions WHERE position_id = p_position AND screen_id = 'SC12';
+    IF v_has > 0 THEN
+      SELECT COUNT(*) INTO v_n FROM employees WHERE position_id = p_position AND mut_driver_busy(user_id) = 1;
+      IF v_n > 0 THEN
+        mut_err('ถอดสิทธิ์งานคนขับไม่ได้ เนื่องจากพนักงานในตำแหน่งนี้ ' || v_n
+                || ' คนยังมีรอบ/ตารางเวลาที่ต้องขับ — เปลี่ยนคนขับในรอบและตารางเวลาเหล่านั้นก่อน');
+      END IF;
     END IF;
   END IF;
 
@@ -1793,6 +1951,7 @@ CREATE OR REPLACE PROCEDURE api_routes_save(p_uid IN VARCHAR2, p_id IN VARCHAR2,
   v_seq    VARCHAR2(4000) := ',';
   v_n      NUMBER;
   v_broken NUMBER;
+  v_total  NUMBER;
   v_id     VARCHAR2(10);
   v_msg    VARCHAR2(300);
 BEGIN
@@ -1846,6 +2005,44 @@ BEGIN
     IF v_broken > 0 THEN
       mut_err('stops|บันทึกไม่ได้ — มีรายการจองของรอบที่ยังเปิดใช้ช่วงจุดจอดที่ถูกตัดออก (' || v_broken || ' ช่วง)');
     END IF;
+
+    -- เวลาเดินทางรวมยาวขึ้น → รอบ/ตารางเวลาของเส้นทางนี้จบช้าลง อาจชนงานถัดไปของรถ/คนขับเดียวกัน
+    v_total := 0;
+    FOR i IN 1 .. v_rows.COUNT LOOP v_total := v_total + v_rows(i).minutes; END LOOP;
+    IF v_total > mut_route_minutes(p_id) THEN
+      FOR c IN (
+        SELECT t.trip_id, TO_CHAR(t.trip_date, 'DD/MM/YYYY') || ' ' || SUBSTR(t.depart_time, 1, 5) AS at_, o.trip_id AS other,
+               CASE WHEN o.vehicle_id = t.vehicle_id THEN 'รถคันเดียวกัน' ELSE 'คนขับเดียวกัน' END AS kind
+          FROM trips t
+          JOIN trips o ON o.trip_id <> t.trip_id AND o.status <> 'ยกเลิก'
+                      AND (o.vehicle_id = t.vehicle_id OR o.driver_id = t.driver_id)
+                      AND o.trip_date BETWEEN t.trip_date - 1 AND t.trip_date + 1
+         WHERE t.route_id = p_id AND t.trip_date >= TRUNC(SYSDATE) AND t.status IN ('เปิด', 'กำลังเดินทาง')
+           AND mut_ts(o.trip_date, o.depart_time) < mut_ts(t.trip_date, t.depart_time) + v_total / 1440
+           AND mut_ts(t.trip_date, t.depart_time) < mut_ts(o.trip_date, o.depart_time)
+               + CASE WHEN o.route_id = p_id THEN v_total ELSE mut_route_minutes(o.route_id) END / 1440
+         ORDER BY t.trip_date, t.depart_time
+         FETCH FIRST 1 ROWS ONLY) LOOP
+        mut_err('stops|เวลารวมใหม่ ' || v_total || ' นาที ทำให้รอบ ' || c.trip_id || ' วันที่ ' || c.at_
+                || ' ชนกับรอบ ' || c.other || ' (' || c.kind || ')');
+      END LOOP;
+      FOR c IN (
+        SELECT s.schedule_id, SUBSTR(s.depart_time, 1, 5) AS at_, o.schedule_id AS other,
+               CASE WHEN o.vehicle_id = s.vehicle_id THEN 'รถคันเดียวกัน' ELSE 'คนขับเดียวกัน' END AS kind
+          FROM trip_schedules s
+          JOIN trip_schedules o ON o.schedule_id <> s.schedule_id AND o.active = 1
+                               AND (o.vehicle_id = s.vehicle_id OR o.driver_id = s.driver_id)
+                               AND mut_days_overlap(o.run_days, s.run_days) = 1
+         WHERE s.route_id = p_id AND s.active = 1
+           AND mut_minutes_of(o.depart_time) < mut_minutes_of(s.depart_time) + v_total
+           AND mut_minutes_of(s.depart_time) < mut_minutes_of(o.depart_time)
+               + CASE WHEN o.route_id = p_id THEN v_total ELSE mut_route_minutes(o.route_id) END
+         ORDER BY s.depart_time
+         FETCH FIRST 1 ROWS ONLY) LOOP
+        mut_err('stops|เวลารวมใหม่ ' || v_total || ' นาที ทำให้ตารางเวลา ' || c.schedule_id || ' (' || c.at_
+                || ') ชนกับตารางเวลา ' || c.other || ' (' || c.kind || ')');
+      END LOOP;
+    END IF;
   END IF;
 
   IF p_id IS NULL THEN
@@ -1878,12 +2075,15 @@ END;
 /
 
 -- p_date ว่าง = ทุกวัน (หน้าเว็บส่งวันนี้เป็นค่าเริ่มต้น) — แสดงไม่เกิน 500 รอบ
+-- p_q = ค้นรหัสรอบ (บางส่วนได้) — มีค่าแล้วไม่กรองวันที่ เพราะรหัสรอบไม่ซ้ำกันอยู่แล้ว
 CREATE OR REPLACE PROCEDURE api_trips_list(p_uid IN VARCHAR2, p_date IN VARCHAR2, p_route IN VARCHAR2,
-                                           p_driver IN VARCHAR2, p_vehicle IN VARCHAR2, p_status IN VARCHAR2) IS
-  v_date DATE := mut_to_date(p_date);
+                                           p_driver IN VARCHAR2, p_vehicle IN VARCHAR2, p_status IN VARCHAR2,
+                                           p_q IN VARCHAR2) IS
+  v_q    VARCHAR2(30) := TRIM(p_q);
+  v_date DATE := CASE WHEN v_q IS NULL THEN mut_to_date(p_date) END;
 BEGIN
   sp_require(p_uid, 'SC06', NULL);
-  sp_trips(NULL, p_driver, v_date, v_date, p_route, p_vehicle, p_status, 0, 'date_desc', 500);
+  sp_trips(NULL, p_driver, v_date, v_date, p_route, p_vehicle, p_status, 0, 'date_desc', 500, v_q);
 END;
 /
 
@@ -1925,12 +2125,13 @@ CREATE OR REPLACE PROCEDURE api_trips_save(p_uid IN VARCHAR2, p_id IN VARCHAR2, 
   v_new         BOOLEAN := p_id IS NULL;
   v_date        DATE := mut_to_date(p_trip_date);
   v_time        VARCHAR2(8) := mut_norm_time(p_depart_time);
-  v_status      VARCHAR2(30) := CASE WHEN p_id IS NULL THEN 'เปิด' ELSE p_status END;
+  v_status      VARCHAR2(30 CHAR) := CASE WHEN p_id IS NULL THEN 'เปิด' ELSE p_status END;
   v_old_vehicle VARCHAR2(10);
   v_old_driver  VARCHAR2(10);
   v_old_route   VARCHAR2(10);
+  v_old_sched   VARCHAR2(10);
   v_booked      NUMBER := 0;
-  v_vstatus     VARCHAR2(30);
+  v_vstatus     VARCHAR2(30 CHAR);
   v_vseats      NUMBER;
   v_minutes     NUMBER;
   v_n           NUMBER;
@@ -1939,7 +2140,8 @@ CREATE OR REPLACE PROCEDURE api_trips_save(p_uid IN VARCHAR2, p_id IN VARCHAR2, 
 BEGIN
   sp_require(p_uid, 'SC06', CASE WHEN v_new THEN 'add' ELSE 'edit' END);
   IF NOT v_new THEN
-    SELECT COUNT(*), MAX(vehicle_id), MAX(driver_id), MAX(route_id) INTO v_n, v_old_vehicle, v_old_driver, v_old_route
+    SELECT COUNT(*), MAX(vehicle_id), MAX(driver_id), MAX(route_id), MAX(schedule_id)
+      INTO v_n, v_old_vehicle, v_old_driver, v_old_route, v_old_sched
       FROM trips WHERE trip_id = p_id;
     IF v_n = 0 THEN mut_err('!notfound|ไม่พบรอบการเดินรถ'); END IF;
     v_booked := mut_booked_seats(p_id);
@@ -1994,6 +2196,32 @@ BEGIN
         mut_err('driver_id|ไม่สามารถจัดรอบนี้ได้ เนื่องจากคนขับมีงานรอบ ' || c.label);
       END IF;
     END LOOP;
+
+    -- ตารางเวลาที่ยังไม่ได้สร้างรอบของวันนั้น (sp_ensure_trips สร้างล่วงหน้าแค่ 8 วัน) ที่ใช้รถ/คนขับเดียวกันและเวลาทับกัน
+    IF v_date >= TRUNC(SYSDATE) THEN
+      FOR c IN (
+        SELECT s.schedule_id || ' ' || r.route_name || ' ' || SUBSTR(s.depart_time, 1, 5) || '–'
+               || mut_time_add(s.depart_time, mut_route_minutes(s.route_id)) AS label,
+               CASE WHEN s.vehicle_id = p_vehicle_id THEN 'vehicle' ELSE 'driver' END AS kind
+          FROM trip_schedules s JOIN routes r ON r.route_id = s.route_id
+         WHERE s.active = 1 AND s.schedule_id <> NVL(v_old_sched, '-')
+           AND NOT (s.route_id = p_route_id AND s.depart_time = v_time)   -- รอบเดียวกัน: sp_ensure_trips ไม่สร้างซ้ำอยู่แล้ว
+           AND (s.vehicle_id = p_vehicle_id OR s.driver_id = p_driver_id)
+           AND INSTR(s.run_days, TO_CHAR(mut_weekday(v_date))) > 0
+           AND NOT EXISTS (SELECT 1 FROM trips t
+                            WHERE t.trip_date = v_date
+                              AND (t.schedule_id = s.schedule_id OR (t.route_id = s.route_id AND t.depart_time = s.depart_time)))
+           AND mut_minutes_of(s.depart_time) < mut_minutes_of(v_time) + v_minutes
+           AND mut_minutes_of(v_time) < mut_minutes_of(s.depart_time) + mut_route_minutes(s.route_id)
+         ORDER BY 2 DESC
+         FETCH FIRST 1 ROWS ONLY) LOOP
+        IF c.kind = 'vehicle' THEN
+          mut_err('vehicle_id|ไม่สามารถจัดรอบนี้ได้ เนื่องจากรถถูกใช้ในตารางเวลา ' || c.label);
+        ELSE
+          mut_err('driver_id|ไม่สามารถจัดรอบนี้ได้ เนื่องจากคนขับมีงานในตารางเวลา ' || c.label);
+        END IF;
+      END LOOP;
+    END IF;
   END IF;
 
   IF v_new THEN

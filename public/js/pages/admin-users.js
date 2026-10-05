@@ -19,7 +19,7 @@ MUT.page(async ({ can }) => {
       <thead><tr><th>รหัส</th><th>ชื่อ</th><th>email</th><th>username</th><th>แผนก</th><th>ตำแหน่ง</th><th>เบอร์โทร</th><th class="right">จัดการ</th></tr></thead>
       <tbody>${rows.map((u, i) => `<tr>
         <td class="mono">${esc(u.user_id)}</td><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${esc(u.username)}</td>
-        <td>${esc(u.department_name)}</td><td>${esc(u.position_name || '—')}</td><td class="nowrap">${esc(u.phone || '—')}</td>
+        <td>${esc(u.department_name)}</td><td>${Number(u.is_employee) ? esc(u.position_name || '—') : '<span class="muted">ผู้ใช้ทั่วไป</span>'}</td><td class="nowrap">${esc(u.phone || '—')}</td>
         <td class="actions">
           ${can('SC07', 'edit') ? `<a class="btn btn-sm" href="/admin/user-form?id=${encodeURIComponent(u.user_id)}">แก้ไข</a>` : ''}
           ${can('SC07', 'delete') ? `<button class="btn btn-sm" style="color:var(--danger)" type="button" data-delete="${i}">ลบ</button>` : ''}

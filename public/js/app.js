@@ -210,6 +210,14 @@
   }
   // ผูกฟอร์ม: submit → onSubmit(data) พร้อมสถานะกำลังส่ง + แสดง error จากหลังบ้าน
   function bindForm(form, onSubmit) {
+    // แก้ช่องที่ผิดแล้ว → ซ่อน error ของช่องนั้นทันที (ไม่ค้างจนกว่าจะกดบันทึกใหม่)
+    form.addEventListener('input', (e) => {
+      const el = e.target;
+      if (!el.classList || !el.classList.contains('is-invalid')) return;
+      el.classList.remove('is-invalid');
+      el.removeAttribute('aria-invalid');
+      el.closest('.field')?.querySelector('.error-text[data-auto]')?.remove();
+    });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       clearErrors(form);
@@ -299,16 +307,21 @@
     main.insertAdjacentHTML('afterend', nav);
   }
 
+  // คนขับ: แสดงชื่อผู้ login (กันใช้เครื่องร่วมกันแล้วกดงานผิดบัญชี) + สลับโหมด/ออกจากระบบที่หัวหน้า
   function layoutDriver(me) {
     const header = `<header class="topbar"><div class="topbar-inner">
-        <a class="brand" href="/driver/">${LOGO} BusBuddy · คนขับ</a><span class="spacer"></span>
+        <a class="brand" href="/driver/">${LOGO}<span class="brand-text">
+          <span class="brand-name">BusBuddy <span class="role-tag">คนขับ</span></span>
+          <span class="brand-who">${esc(me.name)}</span>
+        </span></a><span class="spacer"></span>
+        <a class="switch-link" href="/"><span class="hide-xs">โหมด</span>ผู้โดยสาร</a>
         ${me.has_admin ? '<a class="switch-link" href="/admin/">หลังบ้าน</a>' : ''}
+        <button class="topbar-icon" type="button" data-logout aria-label="ออกจากระบบ" title="ออกจากระบบ">${icon('logout')}</button>
       </div></header>`;
     const nav = tabbar('เมนูคนขับ', [
       { href: '/driver/', label: 'งานวันนี้', icon: 'steering', match: path === '/driver/' || /^\/driver\/(trip|scan|close)/.test(path) },
       { href: '/driver/history', label: 'ประวัติ', icon: 'clock', match: path.startsWith('/driver/history') },
-      { href: '/', label: 'จองรถ', icon: 'search', match: false },
-      { href: '/profile', label: 'โปรไฟล์', icon: 'user', match: false },
+      { href: '/profile', label: 'โปรไฟล์', icon: 'user', match: path.startsWith('/profile') },
     ]);
     const main = document.getElementById('main');
     main.insertAdjacentHTML('beforebegin', header);
@@ -405,8 +418,13 @@
   // ---------- เริ่มหน้า ----------
   // page(async (ctx) => {...}) — ctx = { me, perms, can(screen, action), hasScreen(screen) }
   // หน้า auth (login/register) ไม่ต้อง login
+  // โหมดล่าสุด (ผู้โดยสาร/คนขับ) — หน้าโปรไฟล์ใช้ร่วมกัน จึงแสดงตามโหมดที่มาจาก ไม่ให้แถบเมนูคนขับหายไป
+  const MODE_KEY = 'mut-mode';
+  const readMode = () => { try { return sessionStorage.getItem(MODE_KEY); } catch (e) { return null; } };
+  const saveMode = (m) => { try { sessionStorage.setItem(MODE_KEY, m); } catch (e) { /* ignore */ } };
+
   async function page(fn) {
-    const kind = document.body.dataset.layout || 'user';
+    let kind = document.body.dataset.layout || 'user';
     const main = document.getElementById('main');
     main.setAttribute('aria-busy', 'true');
     // <a data-icon="search"> → ใส่ไอคอนหน้าข้อความ
@@ -427,6 +445,8 @@
           hasScreen: (s) => !!perms[s],
           can: (s, action) => !!(perms[s] && perms[s][action]),
         };
+        if (kind === 'user' && path.startsWith('/profile') && me.is_driver && readMode() === 'driver') kind = 'driver';
+        if (kind === 'driver' || kind === 'user') saveMode(kind);
         if (kind === 'driver') layoutDriver(me);
         else if (kind === 'admin') layoutAdmin(me, perms);
         else layoutUser(me);

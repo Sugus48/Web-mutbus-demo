@@ -45,6 +45,8 @@ function normalize(err) {
     err.errno = ERRNO[num];
     err.sqlState = '23000';
     err.sqlMessage = err.message;
+  } else if (num === 6550 && /PLS-00306/.test(err.message)) {
+    err.code = 'ER_SP_WRONG_NO_OF_ARGS'; // จำนวน/ชนิดพารามิเตอร์ไม่ตรง (procedure ถูกแก้หลังเปิดเว็บ) — ชื่อเดียวกับ MySQL
   } else if (num === 4068 || num === 6508 || num === 6550 || num === 4063) {
     err.code = 'ER_SP_DOES_NOT_EXIST'; // procedure ไม่มี / คอมไพล์ไม่ผ่าน
   } else if (/^(NJS-5\d\d|ORA-12\d\d\d|ORA-01017|ORA-28000)/.test(err.code || err.message) || err.code === 'ETIMEDOUT') {

@@ -5,7 +5,8 @@ MUT.page(async ({ me, can, hasScreen }) => {
   if (!location.search) q.date = me.today; // ค่าเริ่มต้น = รอบวันนี้
   const [, routes, vehicles, drivers] = await MUT.api('lookups');
   const form = document.getElementById('filter-form');
-  form.date.value = q.date || '';
+  form.q.value = q.q || '';
+  form.date.value = q.q ? '' : (q.date || '');   // ค้นรหัสรอบ = ค้นทุกวัน (api_trips_list ไม่กรองวันที่)
   form.route.innerHTML = options(routes, 'route_id', 'route_name', q.route, 'ทั้งหมด');
   form.driver.innerHTML = options(drivers, 'user_id', 'name', q.driver, 'ทั้งหมด');
   form.vehicle.innerHTML = options(vehicles, 'vehicle_id', 'plate_no', q.vehicle, 'ทั้งหมด');
@@ -17,7 +18,9 @@ MUT.page(async ({ me, can, hasScreen }) => {
   const [rows] = await MUT.api('trips_list', q);
   const box = document.getElementById('rows');
   if (!rows.length) {
-    box.innerHTML = '<div class="card empty"><strong>ไม่พบรอบการเดินรถ</strong>ลองเปลี่ยนตัวกรอง</div>';
+    box.innerHTML = q.q
+      ? `<div class="card empty"><strong>ไม่พบรอบรหัส "${esc(q.q)}"</strong>ตรวจสอบรหัสรอบ หรือล้างตัวกรองอื่น</div>`
+      : '<div class="card empty"><strong>ไม่พบรอบการเดินรถ</strong>ลองเปลี่ยนตัวกรอง</div>';
     return;
   }
   box.innerHTML = `<div class="table-wrap"><table class="table">

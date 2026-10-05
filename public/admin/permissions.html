@@ -18,6 +18,18 @@
   </div>
 </div>
 
+<details class="card mb-4 how-it-works">
+  <summary class="card-title mb-0">ระบบสิทธิ์ทำงานอย่างไร</summary>
+  <ol class="role-steps">
+    <li><b>ผู้ใช้ทั่วไป / นักศึกษา</b> — ทุกบัญชีที่สมัครเองจากหน้า "สมัครสมาชิก" ได้บทบาทนี้อัตโนมัติ (แผนก นักศึกษา, ไม่มีตำแหน่ง)
+      ใช้ได้เฉพาะการใช้งานทั่วไปของเว็บ: ค้นหารอบรถ จองที่นั่ง ดูการจองของตัวเอง/QR Code และแก้โปรไฟล์ — เข้าหลังบ้านและงานคนขับไม่ได้</li>
+    <li><b>พนักงาน</b> — ผู้ดูแลเปลี่ยนบัญชีเป็นพนักงานได้ที่หน้า <a href="/admin/users">ผู้ใช้งาน / พนักงาน</a>
+      (ติ๊ก "เป็นพนักงาน" แล้วเลือกตำแหน่ง) จากนั้นได้สิทธิ์หน้าจอตามตารางของตำแหน่งนั้น เพิ่มจากการใช้งานทั่วไป</li>
+    <li><b>คนขับ</b> — ตำแหน่งที่มีสิทธิ์เข้าถึงหน้าจอ <span class="mono">SC12</span> งานคนขับ เข้าสู่ระบบแล้วไปหน้างานคนขับ และถูกเลือกเป็นคนขับในรอบ/ตารางเวลาได้</li>
+  </ol>
+  <p class="muted small mb-0">แก้สิทธิ์แล้วมีผลทันทีกับทุกคนในตำแหน่งนั้น · ผู้ที่จัดการผู้ใช้ได้ (SC07) กำหนดตำแหน่งหรือแก้ไขบัญชีที่มีสิทธิ์มากกว่าตัวเองไม่ได้</p>
+</details>
+
 <form class="filters" id="position-form">
   <div class="field wide">
     <label for="position">ตำแหน่ง</label>
@@ -27,6 +39,10 @@
 
 <form id="matrix-form">
   <div data-form-error></div>
+  <div class="alert alert-info" id="driver-note" hidden>
+    ตำแหน่งนี้เป็น <b>คนขับ</b> (มีสิทธิ์งานคนขับ SC12) — เข้าสู่ระบบแล้วไปหน้างานคนขับ เห็นเฉพาะรอบที่ตัวเองได้รับมอบหมาย
+    และถูกเลือกเป็นคนขับในรอบการเดินรถ/ตารางเวลาได้
+  </div>
   <div class="table-wrap">
     <table class="table matrix">
       <caption class="sr-only" id="matrix-caption"></caption>
@@ -42,6 +58,22 @@
   </div>
   <p class="muted small mt-2" id="readonly-note" hidden>คุณดูได้อย่างเดียว ไม่มีสิทธิ์แก้ไข</p>
 </form>
+
+<!-- บทบาทคงที่ของบัญชีที่สมัครเอง (ไม่ใช่ตำแหน่งในฐานข้อมูล — แก้ไขไม่ได้) -->
+<section id="general-role" hidden>
+  <div class="alert alert-info">บทบาทนี้กำหนดไว้ในระบบ แก้ไขไม่ได้ — ทุกบัญชีที่สมัครเองได้บทบาทนี้อัตโนมัติ</div>
+  <div class="table-wrap">
+    <table class="table matrix">
+      <caption class="sr-only">สิ่งที่ผู้ใช้ทั่วไป / นักศึกษา ใช้งานได้</caption>
+      <thead><tr><th scope="col">การใช้งาน</th><th scope="col">ใช้ได้</th></tr></thead>
+      <tbody id="general-rows"></tbody>
+    </table>
+  </div>
+  <p class="muted small mt-2" id="general-users-note">
+    ต้องการให้ผู้ใช้คนใดทำงานหลังบ้านหรือเป็นคนขับ → แก้ไขบัญชีนั้นที่หน้าผู้ใช้งาน ติ๊ก "เป็นพนักงาน" แล้วเลือกตำแหน่ง
+    <a id="general-users-link" href="/admin/users?type=user" hidden>ดูรายชื่อผู้ใช้ทั่วไปทั้งหมด</a>
+  </p>
+</section>
 </main>
 <script src="/js/app.js"></script>
 <script src="/js/pages/admin-permissions.js"></script>

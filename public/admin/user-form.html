@@ -30,27 +30,36 @@
       <input class="input" id="username" name="username" autocomplete="off" required>
     </div>
     <div class="field">
-      <label for="password" id="password-label">Password</label>
-      <div class="input-group">
-        <input class="input" id="password" name="password" type="password" autocomplete="new-password">
-        <button class="btn btn-sm btn-ghost" type="button" data-toggle-password="password" aria-pressed="false">แสดง</button>
-      </div>
-    </div>
-    <div class="field">
       <label for="department_id">แผนก</label>
       <select class="input" id="department_id" name="department_id" required></select>
+    </div>
+    <div class="field">
+      <label for="password" id="password-label">Password</label>
+      <div class="input-group">
+        <input class="input" id="password" name="password" type="password" autocomplete="new-password" aria-describedby="password-hint">
+        <button class="btn btn-sm btn-ghost" type="button" data-toggle-password="password" aria-pressed="false">แสดง</button>
+      </div>
+      <span class="hint" id="password-hint">อย่างน้อย 4 ตัวอักษร</span>
+    </div>
+    <div class="field">
+      <label for="confirm">ยืนยัน Password</label>
+      <div class="input-group">
+        <input class="input" id="confirm" name="confirm" type="password" autocomplete="new-password">
+        <button class="btn btn-sm btn-ghost" type="button" data-toggle-password="confirm" aria-pressed="false">แสดง</button>
+      </div>
     </div>
   </div>
 
   <hr class="divider">
   <div class="field">
     <label class="switch"><input type="checkbox" name="is_employee" value="1" id="is_employee"> เป็นพนักงาน</label>
-    <span class="hint">พนักงานมีเบอร์โทรและตำแหน่ง — สิทธิ์การใช้งานหลังบ้าน/งานคนขับกำหนดตามตำแหน่ง</span>
+    <span class="hint">พนักงานมีเบอร์โทรและตำแหน่ง — สิทธิ์การใช้งานหลังบ้าน/งานคนขับกำหนดตามตำแหน่ง
+      · ไม่ใช่พนักงาน = ผู้ใช้ทั่วไป / นักศึกษา ใช้ได้เฉพาะการจองรถ (<a href="/admin/permissions?position=user">ดูสิทธิ์</a>)</span>
   </div>
   <div class="form-grid" id="employee-fields">
     <div class="field">
       <label for="phone">เบอร์โทร</label>
-      <input class="input" id="phone" name="phone" type="tel">
+      <input class="input" id="phone" name="phone" type="tel" inputmode="numeric" maxlength="10" placeholder="0812345678">
     </div>
     <div class="field">
       <label for="position_id">ตำแหน่ง</label>

@@ -11,10 +11,28 @@ MUT.page(async ({ can }) => {
   document.getElementById('form-title').textContent = isNew ? 'เพิ่มผู้ใช้งาน' : `แก้ไขผู้ใช้งาน ${id}`;
   document.title = `${isNew ? 'เพิ่ม' : 'แก้ไข'}ผู้ใช้งาน · BusBuddy`;
   if (!isNew) document.getElementById('password-label').textContent = 'Password (เว้นว่างถ้าไม่เปลี่ยน)';
-  else form.password.required = true;
+  // ยืนยัน password: บังคับเมื่อเพิ่มใหม่ หรือเมื่อกรอก password ใหม่ตอนแก้ไข (api_users_save ตรวจซ้ำอีกชั้น)
+  const syncConfirm = () => {
+    form.password.required = isNew;
+    form.confirm.required = isNew || form.password.value !== '';
+  };
+  form.password.addEventListener('input', syncConfirm);
+  syncConfirm();
   for (const k of ['name', 'email', 'username', 'phone']) form[k].value = v[k] || '';
-  document.getElementById('department_id').innerHTML = options(departments, 'department_id', 'department_name', v.department_id, '— เลือกแผนก —');
-  document.getElementById('position_id').innerHTML = options(positions, 'position_id', 'position_name', v.position_id, '— เลือกตำแหน่ง —');
+  const depSelect = document.getElementById('department_id');
+  const posSelect = document.getElementById('position_id');
+  depSelect.innerHTML = options(departments, 'department_id', 'department_name', v.department_id, '— เลือกแผนก —');
+
+  // ตำแหน่งแสดงตามแผนกที่เลือก (ตำแหน่งที่ไม่ระบุแผนก = ใช้ได้ทุกแผนก)
+  const syncPositions = (selected) => {
+    const dep = depSelect.value;
+    const list = dep ? positions.filter((p) => !p.department_id || p.department_id === dep) : [];
+    const placeholder = !dep ? '— เลือกแผนกก่อน —' : list.length ? '— เลือกตำแหน่ง —' : '— แผนกนี้ยังไม่มีตำแหน่ง —';
+    posSelect.innerHTML = options(list, 'position_id', 'position_name', selected, placeholder);
+    posSelect.disabled = !list.length;
+  };
+  depSelect.addEventListener('change', () => syncPositions(posSelect.value));   // ตำแหน่งเดิมไม่อยู่ในแผนกใหม่ → ล้าง
+  syncPositions(v.position_id);
 
   const toggle = document.getElementById('is_employee');
   const box = document.getElementById('employee-fields');
