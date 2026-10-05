@@ -66,7 +66,9 @@ CREATE TABLE users (
   username      VARCHAR2(50 CHAR)  NOT NULL,
   password_hash VARCHAR2(255 CHAR) NOT NULL,
   department_id VARCHAR2(10 CHAR)  NOT NULL,
+  status        VARCHAR2(20 CHAR)  DEFAULT 'ใช้งาน' NOT NULL,   -- ใช้งาน / ลาพัก / ระงับชั่วคราว / ลาออก
   CONSTRAINT pk_users PRIMARY KEY (user_id),
+  CONSTRAINT ck_users_status CHECK (status IN ('ใช้งาน', 'ลาพัก', 'ระงับชั่วคราว', 'ลาออก')),
   CONSTRAINT uq_users_email UNIQUE (email),
   CONSTRAINT uq_users_username UNIQUE (username),
   CONSTRAINT fk_users_department FOREIGN KEY (department_id) REFERENCES departments (department_id)
@@ -660,10 +662,10 @@ INSERT INTO screens VALUES ('SC12', 'งานคนขับ');
 
 -- password ตัวอย่าง = '1234' (SHA-256 hex)
 -- U001 = ผู้ดูแลระบบ / U002–U004 = คนขับตามเอกสาร MINI
-INSERT INTO users VALUES ('U001', 'ผู้ดูแลระบบ', 'admin@mail.com', 'admin', LOWER(RAWTOHEX(STANDARD_HASH('1234', 'SHA256'))), 'D001');
-INSERT INTO users VALUES ('U002', 'สมชาย ใจดี', 'somchai@mail.com', 'somchai', LOWER(RAWTOHEX(STANDARD_HASH('1234', 'SHA256'))), 'D002');
-INSERT INTO users VALUES ('U003', 'สมหญิง ใจรัก', 'somying@mail.com', 'somying', LOWER(RAWTOHEX(STANDARD_HASH('1234', 'SHA256'))), 'D002');
-INSERT INTO users VALUES ('U004', 'สมควร ใจงาม', 'somkuan@mail.com', 'somkuan', LOWER(RAWTOHEX(STANDARD_HASH('1234', 'SHA256'))), 'D002');
+INSERT INTO users (user_id, name, email, username, password_hash, department_id) VALUES ('U001', 'ผู้ดูแลระบบ', 'admin@mail.com', 'admin', LOWER(RAWTOHEX(STANDARD_HASH('1234', 'SHA256'))), 'D001');
+INSERT INTO users (user_id, name, email, username, password_hash, department_id) VALUES ('U002', 'สมชาย ใจดี', 'somchai@mail.com', 'somchai', LOWER(RAWTOHEX(STANDARD_HASH('1234', 'SHA256'))), 'D002');
+INSERT INTO users (user_id, name, email, username, password_hash, department_id) VALUES ('U003', 'สมหญิง ใจรัก', 'somying@mail.com', 'somying', LOWER(RAWTOHEX(STANDARD_HASH('1234', 'SHA256'))), 'D002');
+INSERT INTO users (user_id, name, email, username, password_hash, department_id) VALUES ('U004', 'สมควร ใจงาม', 'somkuan@mail.com', 'somkuan', LOWER(RAWTOHEX(STANDARD_HASH('1234', 'SHA256'))), 'D002');
 
 INSERT INTO employees VALUES ('U001', '0811111111', 'P01');
 INSERT INTO employees VALUES ('U002', '0822222222', 'P02');

@@ -6,9 +6,11 @@ MUT.page(async ({ me, can, hasScreen }) => {
   const [, routes, vehicles, drivers] = await MUT.api('lookups');
   const form = document.getElementById('filter-form');
   form.q.value = q.q || '';
+  form.driver_name.value = q.driver_name || '';
   form.date.value = q.q ? '' : (q.date || '');   // ค้นรหัสรอบ = ค้นทุกวัน (api_trips_list ไม่กรองวันที่)
   form.route.innerHTML = options(routes, 'route_id', 'route_name', q.route, 'ทั้งหมด');
-  form.driver.innerHTML = options(drivers, 'user_id', 'name', q.driver, 'ทั้งหมด');
+  // ตัวกรองแสดงคนขับทุกสถานะ (ดูรอบย้อนหลังของคนที่ลาออกได้)
+  form.driver.innerHTML = options(drivers, 'user_id', (d) => (d.status === 'ใช้งาน' ? d.name : `${d.name} (${d.status})`), q.driver, 'ทั้งหมด');
   form.vehicle.innerHTML = options(vehicles, 'vehicle_id', 'plate_no', q.vehicle, 'ทั้งหมด');
   form.status.value = q.status || '';
   const add = document.getElementById('add-btn');

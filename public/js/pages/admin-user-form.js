@@ -1,5 +1,16 @@
 // เพิ่ม/แก้ไขผู้ใช้งาน → CALL api_lookups / api_users_get / api_users_save
-MUT.page(async ({ can }) => {
+
+// สถานะบัญชีที่เลือกได้ตามประเภท + คำอธิบาย (api_users_save ตรวจซ้ำอีกชั้น)
+const STATUS_EMPLOYEE = ['ใช้งาน', 'ลาพัก', 'ระงับชั่วคราว', 'ลาออก'];
+const STATUS_USER = ['ใช้งาน', 'ระงับชั่วคราว'];   // นักศึกษาที่จบแล้วยังใช้งานได้ตามปกติ
+const STATUS_HINT = {
+  'ใช้งาน': 'ใช้งานได้ตามปกติ',
+  'ลาพัก': 'ยังเข้าสู่ระบบได้ แต่จะไม่ถูกเลือกเป็นคนขับในรอบ/ตารางเวลาใหม่',
+  'ระงับชั่วคราว': 'เข้าสู่ระบบและจองไม่ได้ — การจองที่ยังไม่เดินทางจะถูกยกเลิก (เปลี่ยนกลับเป็น "ใช้งาน" ได้)',
+  'ลาออก': 'เข้าสู่ระบบไม่ได้ ประวัติยังอยู่ครบ — การจองที่ยังไม่เดินทางจะถูกยกเลิก',
+};
+
+MUT.page(async ({ me, can }) => {
   const { options } = MUT;
   const id = MUT.param('id');
   const isNew = !id;
@@ -37,8 +48,23 @@ MUT.page(async ({ can }) => {
   const toggle = document.getElementById('is_employee');
   const box = document.getElementById('employee-fields');
   toggle.checked = !!Number(v.is_employee);
+
+  // สถานะบัญชี: ตัวเลือกเปลี่ยนตามพนักงาน/ผู้ใช้ทั่วไป — แก้สถานะของตัวเองไม่ได้ (ช่อง disabled จะไม่ถูกส่ง = คงเดิม)
+  const statusSelect = document.getElementById('status');
+  const statusHint = document.getElementById('status-hint');
+  const isSelf = !isNew && id === me.user_id;
+  const syncStatus = (selected) => {
+    const list = toggle.checked ? STATUS_EMPLOYEE : STATUS_USER;
+    const value = list.includes(selected) ? selected : 'ใช้งาน';
+    statusSelect.innerHTML = options(list.map((s) => ({ s })), 's', 's', value);
+    statusHint.textContent = isSelf ? 'เปลี่ยนสถานะบัญชีของตัวเองไม่ได้' : STATUS_HINT[value];
+  };
+  statusSelect.disabled = isSelf;
+  statusSelect.addEventListener('change', () => { statusHint.textContent = STATUS_HINT[statusSelect.value]; });
+  syncStatus(v.status || 'ใช้งาน');
+
   const sync = () => { box.hidden = !toggle.checked; };
-  toggle.addEventListener('change', sync);
+  toggle.addEventListener('change', () => { sync(); syncStatus(statusSelect.value); });
   sync();
 
   MUT.bindForm(form, async (data) => {

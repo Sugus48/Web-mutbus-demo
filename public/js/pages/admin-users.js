@@ -7,6 +7,7 @@ MUT.page(async ({ can }) => {
   document.getElementById('department').innerHTML = options(departments, 'department_id', 'department_name', q.department, 'ทั้งหมด');
   document.getElementById('position').innerHTML = options(positions, 'position_id', 'position_name', q.position, 'ทั้งหมด');
   document.getElementById('type').value = q.type || '';
+  document.getElementById('status').value = q.status || '';   // ว่าง = ซ่อนบัญชีที่ลาออก
   document.getElementById('add-btn').hidden = !can('SC07', 'add');
 
   const [rows] = await MUT.api('users_list', q);
@@ -16,10 +17,10 @@ MUT.page(async ({ can }) => {
     return;
   }
   box.innerHTML = `<div class="table-wrap"><table class="table">
-      <thead><tr><th>รหัส</th><th>ชื่อ</th><th>email</th><th>username</th><th>แผนก</th><th>ตำแหน่ง</th><th>เบอร์โทร</th><th class="right">จัดการ</th></tr></thead>
+      <thead><tr><th>รหัส</th><th>ชื่อ</th><th>email</th><th>username</th><th>แผนก</th><th>ตำแหน่ง</th><th>เบอร์โทร</th><th>สถานะ</th><th class="right">จัดการ</th></tr></thead>
       <tbody>${rows.map((u, i) => `<tr>
         <td class="mono">${esc(u.user_id)}</td><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${esc(u.username)}</td>
-        <td>${esc(u.department_name)}</td><td>${Number(u.is_employee) ? esc(u.position_name || '—') : '<span class="muted">ผู้ใช้ทั่วไป</span>'}</td><td class="nowrap">${esc(u.phone || '—')}</td>
+        <td>${esc(u.department_name)}</td><td>${Number(u.is_employee) ? esc(u.position_name || '—') : '<span class="muted">ผู้ใช้ทั่วไป</span>'}</td><td class="nowrap">${esc(u.phone || '—')}</td><td>${MUT.badge(u.status)}</td>
         <td class="actions">
           ${can('SC07', 'edit') ? `<a class="btn btn-sm" href="/admin/user-form?id=${encodeURIComponent(u.user_id)}">แก้ไข</a>` : ''}
           ${can('SC07', 'delete') ? `<button class="btn btn-sm" style="color:var(--danger)" type="button" data-delete="${i}">ลบ</button>` : ''}

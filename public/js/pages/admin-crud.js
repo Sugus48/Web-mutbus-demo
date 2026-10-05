@@ -23,7 +23,9 @@
     value: v.vehicle_id,
     label: `${v.plate_no} ${v.type_name} ${v.seat_count} ที่นั่ง${v.status === 'พร้อมใช้งาน' ? '' : ` (${v.status})`}`,
   }));
-  const driverOptions = (lk) => lk.drivers.map((u) => ({ value: u.user_id, label: u.name }));
+  // ตัวกรอง = คนขับทุกสถานะ / ฟอร์ม = เฉพาะ "ใช้งาน" (ลาพัก/ลาออก/ระงับ เลือกเป็นคนขับใหม่ไม่ได้)
+  const driverOptions = (lk) => lk.drivers.map((u) => ({ value: u.user_id, label: u.status === 'ใช้งาน' ? u.name : `${u.name} (${u.status})` }));
+  const activeDriverOptions = (lk) => lk.drivers.filter((u) => u.status === 'ใช้งาน').map((u) => ({ value: u.user_id, label: u.name }));
   const departmentOptions = (lk) => lk.departments.map((d) => ({ value: d.department_id, label: d.department_name }));
 
   const RESOURCES = {
@@ -146,7 +148,7 @@
         { name: 'route_id', label: 'เส้นทาง', type: 'select', required: true, options: routeOptions },
         { name: 'depart_time', label: 'เวลาออก', type: 'time', required: true },
         { name: 'run_days', label: 'วันที่วิ่ง', type: 'select', required: true, options: () => RUN_DAYS },
-        { name: 'driver_id', label: 'คนขับ', type: 'select', required: true, options: driverOptions },
+        { name: 'driver_id', label: 'คนขับ', type: 'select', required: true, options: activeDriverOptions },
         { name: 'vehicle_id', label: 'รถ', type: 'select', required: true, options: vehicleOptions,
           hint: 'รถที่ไม่อยู่ในสถานะพร้อมใช้งาน ระบบจะข้ามไม่สร้างรอบให้' },
         { name: 'active', label: 'สถานะ', type: 'select', required: true, options: () => ACTIVE,

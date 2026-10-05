@@ -6,7 +6,7 @@
 -- =====================================================================
 
 -- มานี = นักศึกษา (ผู้ใช้บริการ ไม่ใช่พนักงาน)
-INSERT INTO users VALUES ('U005', 'มานี มีนา', 'manee@mail.com', 'manee', LOWER(RAWTOHEX(STANDARD_HASH('1234', 'SHA256'))), 'D003');
+INSERT INTO users (user_id, name, email, username, password_hash, department_id) VALUES ('U005', 'มานี มีนา', 'manee@mail.com', 'manee', LOWER(RAWTOHEX(STANDARD_HASH('1234', 'SHA256'))), 'D003');
 
 -- รอบในอดีต (เสร็จสิ้นแล้ว) ตามตารางเวลาเดินรถ
 INSERT INTO trips (trip_id, trip_date, depart_time, status, vehicle_id, route_id, driver_id, schedule_id) VALUES ('TR001', TRUNC(SYSDATE) - 3, '09:30:00', 'เสร็จสิ้น', 'V001', 'R001', 'U002', 'TS001');

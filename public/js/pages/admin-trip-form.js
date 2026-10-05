@@ -15,7 +15,7 @@ MUT.page(async ({ me }) => {
   form.route_id.innerHTML = options(routes, 'route_id', (r) => `${r.route_name} (${r.total_minutes} นาที)`, v.route_id, '— เลือกเส้นทาง —');
   form.vehicle_id.innerHTML = options(vehicles, 'vehicle_id',
     (x) => `${x.plate_no} · ${x.type_name}${x.status !== 'พร้อมใช้งาน' ? ` (${x.status})` : ''}`, v.vehicle_id, '— เลือกรถ —');
-  form.driver_id.innerHTML = options(drivers, 'user_id', (x) => `${x.name} (${x.position_name})`, v.driver_id, '— เลือกคนขับ —');
+  form.driver_id.innerHTML = options(drivers, 'user_id', (x) => `${x.name} (${x.position_name}${x.status && x.status !== 'ใช้งาน' ? ` · ${x.status}` : ''})`, v.driver_id, '— เลือกคนขับ —');
   form.trip_date.value = v.trip_date || '';
   if (isNew) form.trip_date.min = me.today;
   form.depart_time.value = v.depart_time ? String(v.depart_time).slice(0, 5) : '';
