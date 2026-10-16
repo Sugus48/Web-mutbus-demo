@@ -4,8 +4,11 @@ MUT.page(async () => {
   const ctx = await TripCtx.load();
   const { trip, stops, seg, board, alight } = ctx;
   document.title = `รอบ ${trip.trip_id} · BusBuddy`;
+  // ลิงก์ย้อนกลับไปหน้าค้นหาพร้อมเงื่อนไขเดิม (หน้าค้นหาจะค้นให้อัตโนมัติ)
   document.getElementById('back-link').href = '/search' + qs({ board, alight, date: trip.trip_date });
 
+  // Route diagram: จุดจอดเรียงตามลำดับ — ไฮไลต์ช่วงขึ้น→ลง (in-seg) และติดป้าย "ขึ้น"/"ลง"
+  // b / a = ลำดับจุดขึ้น / จุดลง (undefined = ไม่ได้เลือกช่วง → ไม่ไฮไลต์)
   const b = seg.board && seg.board.stop_order;
   const a = seg.alight && seg.alight.stop_order;
   const route = stops.map((s) => {
@@ -23,6 +26,8 @@ MUT.page(async () => {
     </li>`;
   }).join('');
 
+  // ข้อมูลรอบ + diagram + ปุ่มจอง
+  // trip.blocked = เหตุผลที่จองไม่ได้ (ยังไม่เลือกจุดขึ้น–ลง / รอบไม่เปิด / เลยเวลาปิดรับจอง / ที่นั่งเต็ม) → แสดงแทนปุ่มจอง
   document.getElementById('trip-view').innerHTML = `
     <div class="page-head row-between">
       <div><h1>${esc(trip.route_name)}</h1><div class="muted">${fmtDate(trip.trip_date)} · รถออก ${fmtTime(trip.depart_time)}</div></div>

@@ -1,5 +1,8 @@
 // ใช้ร่วมกันในหน้า รายละเอียดรอบ / เลือกที่นั่ง / ยืนยันการจอง → CALL api_trip
+// ทั้ง 3 หน้าส่งต่อ ?id=รอบ&board=จุดขึ้น&alight=จุดลง ใน URL
 window.TripCtx = {
+  // โหลดรอบ: trip = ข้อมูลรอบ (+ ที่นั่งคงเหลือในช่วงที่เลือก, blocked = เหตุผลที่จองไม่ได้)
+  //           stops = จุดจอดทั้งเส้นทางพร้อมเวลาถึง / seg = จุดขึ้น–ลงที่เลือก (null = ไม่ได้เลือก/ไม่อยู่ในเส้นทาง)
   async load() {
     const { id, board, alight } = MUT.params();
     const [[trip], stops] = await MUT.api('trip', { trip: id, board, alight });

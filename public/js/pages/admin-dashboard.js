@@ -1,8 +1,10 @@
 // 10.1 Dashboard → CALL api_dashboard
 MUT.page(async ({ hasScreen }) => {
   const { esc, fmtDate, fmtTime, fmtDateTime, badge } = MUT;
+  // ชุดที่ 1 = ตัวเลขสรุปของวันนี้, ชุดที่ 2 = รอบวันนี้, ชุดที่ 3 = รายการจองล่าสุด
   const [[k], trips, latest] = await MUT.api('dashboard');
   document.getElementById('today-info').textContent = `ข้อมูลวันที่ ${fmtDate(k.today)}`;
+  // การ์ดตัวเลข (KPI) — style ใช้ระบายสีตัวเลข เช่น Check-in สีเขียว / No Show สีส้ม
   const kpi = (label, value, style = '') => `<div class="kpi"><div class="k-label">${label}</div><div class="k-value" ${style}>${value}</div></div>`;
   document.getElementById('kpis').innerHTML = [
     kpi('รายการจองวันนี้', k.items_today),
@@ -16,8 +18,9 @@ MUT.page(async ({ hasScreen }) => {
   // รอบวันนี้ / รายการจองล่าสุด แสดงเฉพาะผู้มีสิทธิ์หน้าจอนั้น (api_dashboard คืนชุดว่างให้ผู้ไม่มีสิทธิ์)
   document.getElementById('trips-section').hidden = !hasScreen('SC06');
   document.getElementById('latest-section').hidden = !hasScreen('SC02');
-  document.getElementById('trips-link').href = `/admin/trips?date=${k.today}`;
+  document.getElementById('trips-link').href = `/admin/trips?date=${k.today}`;   // "ดูทั้งหมด" → หน้ารอบที่กรองวันนี้
 
+  // ตารางรอบวันนี้: เวลาออก–ถึงปลายทาง, คนขับ, รถ, ที่นั่งที่จองแล้ว
   document.getElementById('today-trips').innerHTML = !trips.length
     ? '<div class="card empty"><strong>วันนี้ยังไม่มีรอบการเดินรถ</strong></div>'
     : `<div class="table-wrap"><table class="table">
@@ -29,6 +32,7 @@ MUT.page(async ({ hasScreen }) => {
           <td class="right">${t.booked_seats} / ${t.seat_count}</td><td>${badge(t.status)}</td>
         </tr>`).join('')}</tbody></table></div>`;
 
+  // ตารางรายการจองล่าสุด
   document.getElementById('latest').innerHTML = !latest.length
     ? '<div class="card empty"><strong>ยังไม่มีการจอง</strong></div>'
     : `<div class="table-wrap"><table class="table">

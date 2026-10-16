@@ -1,13 +1,21 @@
 // รายละเอียดการจอง → CALL api_bookings_get
 // ยกเลิกรายการ → api_bookings_cancel_item / เปลี่ยนสถานะ → api_bookings_set_status / ลบการจอง → api_bookings_delete
+//
+// การจอง 1 ครั้ง (booking) = ผู้จอง 1 คน + รายการจอง (booking item) ได้หลายรายการ แต่ละรายการมี QR ของตัวเอง
+// ปุ่มจัดการแสดงตามสิทธิ์: SC02 edit = ยกเลิก/เปลี่ยนสถานะรายการ, SC02 delete = ลบทั้งการจอง
 MUT.page(async ({ can }) => {
   const { esc, fmtDate, fmtTime, fmtDateTime, badge } = MUT;
+  // ชุดที่ 1 = การจอง + ข้อมูลผู้จอง, ชุดที่ 2 = รายการจองทั้งหมด
   const [[b], items] = await MUT.api('bookings_get', { id: MUT.param('id') });
   document.title = `การจอง ${b.booking_id} · BusBuddy`;
   const editable = can('SC02', 'edit');
+  // สร้างรูป QR ของทุกรายการพร้อมกัน (Promise.all) — qrs[n] ตรงกับ items[n]
   const qrs = await Promise.all(items.map((i) => QRCode.toDataURL(i.qr_code, { width: 240, margin: 1 })));
   const STATUSES = ['ยืนยัน', 'ยกเลิก', 'No Show'];
 
+  // ข้อมูลผู้จอง + การ์ดของแต่ละรายการ
+  // ปุ่ม "ยกเลิกรายการ" แสดงเฉพาะรายการที่ยืนยันและยังไม่ Check-in / ช่องเปลี่ยนสถานะใช้แก้ข้อมูลกรณีพิเศษ
+  // ปุ่มอ้างรายการด้วยลำดับ n (data-cancel / data-status / id st-n)
   const view = document.getElementById('booking-view');
   view.innerHTML = `
     <div class="page-bar">
@@ -53,6 +61,7 @@ MUT.page(async ({ can }) => {
         </div>
       </div>`).join('')}`;
 
+  // เรียก API แล้วไปหน้า next (ไม่ระบุ = โหลดหน้าเดิม) พร้อมข้อความ / ไม่สำเร็จ = แสดง error อยู่หน้าเดิม
   const run = async (name, data, next) => {
     try {
       const [[r]] = await MUT.api(name, data);
@@ -61,6 +70,8 @@ MUT.page(async ({ can }) => {
       MUT.flash('error', err.message);
     }
   };
+  // ปุ่มทั้งหมดผูกที่ view จุดเดียว (event delegation) แล้วแยกตามปุ่มที่ถูกกด
+  // ยกเลิก / ลบ ถามยืนยันก่อน — ลบสำเร็จกลับหน้ารายการ เพราะหน้านี้ไม่มีข้อมูลแล้ว
   view.addEventListener('click', async (e) => {
     const cancel = e.target.closest('[data-cancel]');
     const status = e.target.closest('[data-status]');

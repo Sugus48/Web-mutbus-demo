@@ -1,17 +1,28 @@
 // 11. รายงาน 1–7 → CALL api_report(ปี, ช่วงวันที่)
 // SQL คืนข้อมูลที่สรุปแล้ว — ไฟล์นี้จัดเป็นการ์ดสรุป + กราฟ (Chart.js) + ตาราง + Export CSV
+//
+// ลำดับการทำงาน
+//   1. เลือกรายงานจาก ?r= (ไม่ถูกต้อง = รายงาน 1) แล้วเรียก api_report พร้อมตัวกรองจาก URL
+//   2. ชุดที่ 1 ของผลลัพธ์ = ค่าตัวกรองที่ใช้จริง (p) — หลังบ้านเติมค่าเริ่มต้นให้ถ้าไม่ได้ส่งมา
+//   3. build() ของรายงานนั้นแปลงข้อมูลเป็นรูปแบบกลาง → ส่วนล่างของไฟล์วาดการ์ด/ตาราง/กราฟ/CSV แบบเดียวกันทุกรายงาน
 MUT.page(async () => {
   const { esc, fmtDate, fmtTime, fmtNum, DAY_NAMES } = MUT;
   const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  // ตัวช่วย: num = ค่าว่างเป็น 0 / sum = รวมคอลัมน์ / right = คอลัมน์ตัวเลขชิดขวา
   const num = (v) => Number(v || 0);
   const sum = (rows, k) => rows.reduce((n, r) => n + num(r[k]), 0);
   const right = (key, label) => ({ key, label, align: 'right' });
 
   // แต่ละรายงาน: ตัวกรอง (year / range) + build(ชุดข้อมูลจาก SQL, ค่าที่ใช้) → { note, cards, columns, rows, totals, charts }
+  //   cards   [[ชื่อ, ค่า], ...] การ์ดตัวเลขด้านบน
+  //   rows    แถวตาราง (_subtotal = แถวรวมย่อย แสดงตัวหนา) / totals = แถวรวมท้ายตาราง
+  //   chart   กราฟเดียว { labels, datasets, caption } หรือ charts = หลายกราฟ (มี title ของตัวเอง)
   const REPORTS = {
     1: {
       title: 'เปรียบเทียบจำนวนคนขึ้น–ลงรถรายปี', filter: 'year',
       build([data], { year_ad: year }) {
+        // ข้อมูล 1 แถว = จุดจอด × ประเภท (ขึ้นรถ/ลงรถ) มีคอลัมน์ m1..m12 = รายเดือน
+        // ตารางแบ่ง 2 ส่วน ขึ้นรถ → ลงรถ แต่ละส่วนปิดด้วยแถวรวมย่อย
         const rows = [];
         const section = (type) => {
           const list = data.filter((r) => r.type === type).map((r) => {
@@ -26,7 +37,7 @@ MUT.page(async () => {
         };
         const board = section('ขึ้นรถ');
         const alight = section('ลงรถ');
-        const busiest = [...board.list].sort((a, b) => b.total - a.total)[0];
+        const busiest = [...board.list].sort((a, b) => b.total - a.total)[0];   // คัดลอกก่อน sort ไม่ให้ลำดับในตารางเปลี่ยน
         const chartOf = (label, list) => ({
           title: `จำนวนผู้โดยสาร ${label} รายเดือน ปี ${year + 543} (ทุกสถานี)`,
           labels: MONTHS,
@@ -46,6 +57,7 @@ MUT.page(async () => {
     2: {
       title: 'สถิติการจองรายปี', filter: 'year',
       build([data]) {
+        // 1 แถว = 1 เดือน (month_no 1–12)
         const keys = ['bookings', 'booking_items', 'booked_seats', 'cancelled', 'checked_in', 'no_show'];
         const rows = data.map((r) => ({ month: MONTHS[r.month_no - 1], ...Object.fromEntries(keys.map((k) => [k, num(r[k])])) }));
         const totals = { month: 'รวมทั้งปี', ...Object.fromEntries(keys.map((k) => [k, sum(rows, k)])) };
@@ -63,6 +75,7 @@ MUT.page(async () => {
     3: {
       title: 'พฤติกรรมผู้ใช้ตามช่วงวันที่', filter: 'range',
       build([rows]) {
+        // ตารางแสดงผู้ใช้ทุกคน แต่กราฟแสดงแค่ 10 คนแรก (กราฟอ่านไม่ออกถ้าแท่งเยอะเกิน)
         const top = rows.slice(0, 10);
         return {
           note: 'จำนวนรายการจองแยกตามผู้ใช้ (จองทั้งหมด / ขึ้นรถจริง / ยกเลิก / No Show)',
@@ -81,6 +94,8 @@ MUT.page(async () => {
     4: {
       title: 'สรุปยอดผู้ใช้แต่ละเส้นทางรายวัน', filter: 'range',
       build([routes, data]) {
+        // ชุดที่ 1 = เส้นทาง (เป็นคอลัมน์), ชุดที่ 2 = ผู้โดยสารตาม วัน × เส้นทาง → พลิกเป็นตาราง แถว = วัน, คอลัมน์ = เส้นทาง
+        // วัน/เส้นทางที่ไม่มีข้อมูล = 0 / การ์ดแสดงได้ 4 เส้นทาง, กราฟ 8 เส้นทาง (เท่าจำนวนสี)
         const order = [2, 3, 4, 5, 6, 7, 1]; // จันทร์ → อาทิตย์ (DAYOFWEEK: 1 = อาทิตย์)
         const rows = order.map((dow) => {
           const r = { day: DAY_NAMES[dow - 1], total: 0 };
@@ -106,6 +121,7 @@ MUT.page(async () => {
       title: 'การใช้บริการแต่ละจุดจอดตามรอบเวลา', filter: 'range',
       build([data]) {
         const rows = data.map((r) => ({ stop_name: r.stop_name, pass_time: fmtTime(r.pass_time), boarding: num(r.boarding), alighting: num(r.alighting) }));
+        // ตาราง = ละเอียดถึงรอบเวลา / กราฟ = รวมทุกรอบเวลาของแต่ละจุดจอด (คงลำดับจุดจอดตามตาราง)
         const byStop = [];
         for (const r of rows) {
           let s = byStop.find((x) => x.stop_name === r.stop_name);
@@ -142,8 +158,9 @@ MUT.page(async () => {
     7: {
       title: 'จำนวนการมอบหมายงานให้รถแต่ละประเภท', filter: 'range',
       build([data]) {
+        // จัดกลุ่มรถตามประเภท + แถวรวมย่อยต่อประเภท / detail = เฉพาะแถวรถ (ไม่รวมแถวรวมย่อย) ใช้คำนวณยอดรวมและกราฟ
         const rows = [];
-        const types = [...new Set(data.map((d) => d.type_name))];
+        const types = [...new Set(data.map((d) => d.type_name))];   // ประเภทรถไม่ซ้ำ ตามลำดับที่พบ
         for (const type of types) {
           const list = data.filter((d) => d.type_name === type);
           list.forEach((d) => rows.push({ type_name: d.type_name, plate_no: d.plate_no, trips: num(d.trips) }));
@@ -162,6 +179,8 @@ MUT.page(async () => {
     },
   };
 
+  // ---------- โหลดข้อมูล ----------
+  // p = ค่าตัวกรองที่หลังบ้านใช้จริง (year_ad = ปี ค.ศ., date_from/date_to) / sets = ข้อมูลของรายงาน
   const q = MUT.params();
   const id = REPORTS[q.r] ? Number(q.r) : 1;
   const report = REPORTS[id];
@@ -174,6 +193,8 @@ MUT.page(async () => {
   document.getElementById('report-menu').innerHTML = Object.entries(REPORTS).map(([k, r]) =>
     `<a class="chip" href="/admin/reports?r=${k}" ${Number(k) === id ? 'aria-current="page"' : ''}>${k}. ${esc(r.title)}</a>`).join('');
   const form = document.getElementById('filter-form');
+  // ช่องปีแสดงเป็น พ.ศ. (ค.ศ. + 543)
+  // แสดงเฉพาะตัวกรองของรายงานนี้ (ปี หรือ ช่วงวันที่) — ช่องที่ซ่อนถูก disabled จึงไม่ถูกส่งไปกับ URL
   form.r.value = id;
   form.year.value = p.year_ad + 543;
   form.from.value = p.date_from;
@@ -189,7 +210,7 @@ MUT.page(async () => {
   document.getElementById('cards').innerHTML = result.cards.map(([label, value]) =>
     `<div class="kpi"><div class="k-label">${esc(label)}</div><div class="k-value">${esc(fmtNum(value))}</div></div>`).join('');
 
-  // ตาราง
+  // ตาราง — คอลัมน์ตาม result.columns, แถวรวมย่อยตัวหนา, แถว totals อยู่ใน <tfoot>
   const cell = (c, v) => `<td class="${c.align || ''}">${esc(v ?? '')}</td>`;
   document.getElementById('report-table').innerHTML = `
     <caption class="sr-only">ตาราง${esc(report.title)}</caption>
@@ -200,6 +221,8 @@ MUT.page(async () => {
     ${result.totals ? `<tfoot><tr>${result.columns.map((c) => cell(c, result.totals[c.key])).join('')}</tr></tfoot>` : ''}`;
 
   // Export CSV (BOM ให้ Excel อ่านภาษาไทยได้)
+  // ข้อมูลเดียวกับตาราง — ทุกค่าครอบด้วย "..." (เครื่องหมาย " ข้างในเขียนซ้ำเป็น "") กันคอมมาในข้อความทำให้คอลัมน์เลื่อน
+  // สร้างไฟล์ในเบราว์เซอร์ (Blob) แล้วกดลิงก์ดาวน์โหลดให้อัตโนมัติ — ไม่ต้องเรียก server อีกรอบ
   const csvBtn = document.getElementById('csv-btn');
   csvBtn.disabled = false;
   csvBtn.addEventListener('click', () => {
@@ -215,6 +238,8 @@ MUT.page(async () => {
   });
 
   // กราฟ
+  // รายงานที่มีกราฟเดียว → ใช้ชื่อรายงานเป็นหัวกราฟ / ทุกค่าเป็น 0 → แสดง "ไม่มีข้อมูล" แทนกราฟเปล่า
+  // โหลด Chart.js ไม่ได้ (ไม่มีเน็ต) → ข้ามกราฟ ตารางยังใช้ได้
   const charts = result.charts || [{ ...result.chart, title: report.title }];
   const hasData = charts.some((c) => c.datasets.some((d) => d.data.some((v) => v > 0)));
   document.getElementById('charts').innerHTML = charts.map((c, i) => `
@@ -229,6 +254,8 @@ MUT.page(async () => {
   const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
   Chart.defaults.font.family = getComputedStyle(document.documentElement).getPropertyValue('--font');
   Chart.defaults.color = '#52514e';
+  // กราฟแท่งทุกรายงาน — interaction index = ชี้ที่ตำแหน่งไหนก็เห็นทุกชุดข้อมูลของแกน X นั้นใน tooltip
+  // legend แสดงเมื่อมีมากกว่า 1 ชุดข้อมูล / precision 0 = แกน Y เป็นจำนวนเต็ม (นับคน/รอบ)
   charts.forEach((chart, n) => new Chart(document.getElementById(`chart-${n}`), {
     type: 'bar',
     data: {

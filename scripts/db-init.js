@@ -13,12 +13,15 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true
 
 const DIR = path.join(__dirname, '..', 'database');
 const CLIENT = (process.env.DB_CLIENT || 'mysql').toLowerCase();
+// ตัวเลือกจาก command line (npm run db:api = --api-only)
 const apiOnly = process.argv.includes('--api-only');
 const withDemo = !apiOnly && !process.argv.includes('--no-demo');
 const withHistory = withDemo && !process.argv.includes('--no-history');
+// มีคำสั่งจริงไหม (ไม่ใช่บรรทัดว่าง/comment ล้วน) — ใช้ตัดชิ้นที่ไม่ต้องส่งไปฐานข้อมูล
 const hasCode = (lines) => lines.some((l) => l.trim() && !l.trim().startsWith('--'));
 
 // MySQL: แยกคำสั่งโดยรองรับ DELIMITER แบบเดียวกับ mysql client / phpMyAdmin
+// (procedure มี ; ข้างใน ไฟล์ SQL จึงเปลี่ยนตัวจบคำสั่งเป็น $$ ชั่วคราว — ตัวจบไม่ถูกส่งไปฐานข้อมูล)
 function splitMysql(text) {
   const statements = [];
   let delimiter = ';';
@@ -41,6 +44,7 @@ function splitMysql(text) {
 }
 
 // Oracle: แบบ SQL*Plus / SQL Developer — คำสั่งทั่วไปจบด้วย ; และ PL/SQL จบด้วยบรรทัด /
+// ดูบรรทัดแรกของแต่ละคำสั่งว่าเป็น PL/SQL ไหม (CREATE FUNCTION/PROCEDURE/... หรือ BEGIN/DECLARE)
 function splitOracle(text) {
   const statements = [];
   let buf = [];
@@ -65,6 +69,7 @@ function splitOracle(text) {
   return statements;
 }
 
+// รันไฟล์ SQL ทีละคำสั่ง — ผิดที่คำสั่งไหน แสดงคำสั่งนั้น (400 ตัวอักษรแรก) แล้วหยุดทันที
 async function runFile(exec, file, split) {
   const statements = split(fs.readFileSync(path.join(DIR, file), 'utf8'));
   for (const sql of statements) {
@@ -78,6 +83,7 @@ async function runFile(exec, file, split) {
   console.log(`✓ ${file} (${statements.length} คำสั่ง)`);
 }
 
+// MySQL: db:init ยังไม่ระบุ database (mut_shuttle.sql สร้างฐานข้อมูลเอง) / db:api ต่อเข้าฐานข้อมูลเดิม
 async function initMysql() {
   const mysql = require('mysql2/promise');
   const conn = await mysql.createConnection({
@@ -102,6 +108,7 @@ async function initMysql() {
   await conn.end();
 }
 
+// Oracle: ติดตั้งลง schema ของผู้ใช้ใน .env (DB_USER)
 async function initOracle() {
   const oracledb = require('oracledb');
   const conn = await oracledb.getConnection({
@@ -132,6 +139,7 @@ async function initOracle() {
   await conn.close();
 }
 
+// เริ่มทำงาน — ล้มเหลว → exit code 1 (npm แสดงว่าคำสั่งไม่สำเร็จ)
 (CLIENT === 'oracle' ? initOracle() : initMysql())
   .then(() => console.log(`✓ สร้างรอบการเดินรถ 8 วันข้างหน้าแล้ว\nเสร็จแล้ว — รัน npm start แล้วเปิด http://localhost:${process.env.PORT || 3000}`))
   .catch((err) => {

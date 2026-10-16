@@ -1,8 +1,10 @@
 // 10.11 รอบการเดินรถ → CALL api_lookups / api_trips_list (ลบ → CALL api_trips_delete)
+// ตัวกรองอยู่ใน URL (ฟอร์ม GET): รหัสรอบ, ชื่อคนขับ, วันที่, เส้นทาง, คนขับ, รถ, สถานะ
 MUT.page(async ({ me, can, hasScreen }) => {
   const { esc, fmtDate, fmtTime, badge, options, qs } = MUT;
   const q = MUT.params();
   if (!location.search) q.date = me.today; // ค่าเริ่มต้น = รอบวันนี้
+  // api_lookups ชุดที่ 2 = เส้นทาง, 3 = รถ, 4 = คนขับ (ตำแหน่งที่มีสิทธิ์ SC12)
   const [, routes, vehicles, drivers] = await MUT.api('lookups');
   const form = document.getElementById('filter-form');
   form.q.value = q.q || '';
@@ -13,6 +15,7 @@ MUT.page(async ({ me, can, hasScreen }) => {
   form.driver.innerHTML = options(drivers, 'user_id', (d) => (d.status === 'ใช้งาน' ? d.name : `${d.name} (${d.status})`), q.driver, 'ทั้งหมด');
   form.vehicle.innerHTML = options(vehicles, 'vehicle_id', 'plate_no', q.vehicle, 'ทั้งหมด');
   form.status.value = q.status || '';
+  // ปุ่มเพิ่มรอบส่งวันที่ที่กรองอยู่ไปเป็นค่าเริ่มต้นของฟอร์ม
   const add = document.getElementById('add-btn');
   add.hidden = !can('SC06', 'add');
   add.href = '/admin/trip-form' + qs({ date: q.date });
@@ -25,6 +28,7 @@ MUT.page(async ({ me, can, hasScreen }) => {
       : '<div class="card empty"><strong>ไม่พบรอบการเดินรถ</strong>ลองเปลี่ยนตัวกรอง</div>';
     return;
   }
+  // ปุ่ม "การจอง" (ต้องเข้าหน้าการจอง SC02 ได้) → หน้าการจองที่กรองเฉพาะรอบนี้
   box.innerHTML = `<div class="table-wrap"><table class="table">
       <thead><tr><th>รหัสรอบ</th><th>วันที่เดินรถ</th><th>เวลาออก</th><th>ถึงปลายทาง</th><th>เส้นทาง</th><th>คนขับ</th><th>รถ</th><th class="right">จองแล้ว</th><th>สถานะ</th><th class="right">จัดการ</th></tr></thead>
       <tbody>${rows.map((t, i) => `<tr>
@@ -42,6 +46,7 @@ MUT.page(async ({ me, can, hasScreen }) => {
     </table></div>
     <p class="small muted mt-2">ทั้งหมด ${rows.length} รอบ</p>`;
 
+  // ลบรอบ: ถามยืนยัน → api_trips_delete (รอบที่มีรายการจองแล้ว แม้ยกเลิกไปแล้ว ลบไม่ได้ → แสดง error ด้านบน)
   box.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-delete]');
     if (!btn) return;

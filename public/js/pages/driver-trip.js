@@ -2,11 +2,16 @@
 MUT.page(async () => {
   const { esc, fmtDate, fmtTime, badge, icon } = MUT;
   const id = MUT.param('id');
+  // เปิดได้เฉพาะรอบที่ตัวเองเป็นคนขับ (หลังบ้านตรวจ — รอบของคนอื่น = 403)
+  // ชุดที่ 1 = รอบ, ชุดที่ 2 = ตัวเลขสรุป, ชุดที่ 3 = จุดจอด × ผู้โดยสาร (เรียงตามลำดับจุดจอด)
   const [[trip], [counts], rows] = await MUT.api('driver_trip', { trip: id });
   document.title = `รอบ ${trip.trip_id} · BusBuddy`;
+  // ย้อนกลับไปหน้าที่น่าจะมา: รอบวันนี้/อนาคต → งานวันนี้ / รอบที่ผ่านไปแล้ว → ประวัติ
   document.getElementById('back-link').href = trip.trip_date >= trip.today ? '/driver/' : '/driver/history';
 
   // จัดกลุ่มผู้โดยสารตามจุดจอด
+  // แถวที่ stop_order ต่างจากแถวก่อน = เริ่มจุดจอดใหม่ / แถวที่ไม่มี booking_item_id = จุดจอดที่ไม่มีใครขึ้นลง
+  // is_up = ขึ้นที่จุดนี้, is_down = ลงที่จุดนี้
   const stops = [];
   for (const r of rows) {
     let s = stops[stops.length - 1];
@@ -18,10 +23,13 @@ MUT.page(async () => {
     if (Number(r.is_up)) s.up.push(r);
     if (Number(r.is_down)) s.down.push(r);
   }
-  const seats = (list) => list.reduce((n, p) => n + Number(p.seats), 0);
+  const seats = (list) => list.reduce((n, p) => n + Number(p.seats), 0);   // รวมจำนวนที่นั่ง (1 รายการจองได้หลายที่นั่ง)
   const done = trip.status === 'เสร็จสิ้น';
   const q = `?id=${encodeURIComponent(trip.trip_id)}`;
 
+  // ปุ่มตามสถานะรอบ:
+  //   เปิด + วันข้างหน้า → ยังเริ่มไม่ได้ / เปิด + วันนี้ → เริ่มการเดินทาง
+  //   กำลังเดินทาง → สแกน QR + ปิดงาน / เสร็จสิ้น, ยกเลิก → ไม่มีปุ่ม
   let actions = '';
   if (trip.status === 'เปิด' && trip.trip_date > trip.today) {
     actions = `<div class="alert alert-info">รอบล่วงหน้า — กดเริ่มการเดินทางและสแกน QR ได้ในวันที่ ${fmtDate(trip.trip_date)}</div>`;
@@ -32,6 +40,8 @@ MUT.page(async () => {
                <a class="btn btn-block" href="/driver/close${q}">ปิดงาน</a>`;
   }
 
+  // ตัวเลขสรุป: รอบที่ปิดงานแล้วแสดง No Show แทน "รอขึ้นรถ"
+  // รายชื่อผู้ขึ้น: ✓ = Check-in แล้ว, ✗ = No Show
   document.getElementById('trip-view').innerHTML = `
     <div class="page-head row-between">
       <div>
@@ -58,6 +68,7 @@ MUT.page(async () => {
       <p class="small muted mb-0">✓ = Check-in แล้ว · ✗ = No Show</p>
     </div>`;
 
+  // เริ่มการเดินทาง: ยืนยัน → api_driver_start (รอบเปลี่ยนเป็น "กำลังเดินทาง") → โหลดหน้าใหม่ให้เห็นปุ่มสแกน
   const start = document.getElementById('start-btn');
   if (start) {
     start.addEventListener('click', async () => {

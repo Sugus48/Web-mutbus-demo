@@ -1,12 +1,17 @@
 // 8.3 รายละเอียดรายการจอง + QR Code → CALL api_item / api_cancel
 MUT.page(async () => {
   const { esc, fmtDate, fmtTime, fmtDateTime, badge, icon } = MUT;
+  // api_item คืนเฉพาะรายการของผู้ใช้เอง (ของคนอื่น = ไม่พบ)
   const [[item]] = await MUT.api('item', { item: MUT.param('id') });
-  const isNew = !!MUT.param('new');
+  const isNew = !!MUT.param('new');   // มาจากหน้ายืนยันการจอง
   const cancelled = item.status === 'ยกเลิก';
   document.title = `รายการจอง ${item.booking_item_id} · BusBuddy`;
+  // สร้างรูป QR ในเบราว์เซอร์ (js/vendor/qrcode.js) เป็น data URL — ใช้ทั้งแสดงผลและปุ่มบันทึกรูป
+  // วาดที่ 440px แต่แสดง 220px → คมชัดบนจอความละเอียดสูง
   const qr = await QRCode.toDataURL(item.qr_code, { width: 440, margin: 1 });
 
+  // จองใหม่ → หัว "จองสำเร็จ" / เปิดดูภายหลัง → ลิงก์กลับ + สถานะ
+  // ยกเลิกแล้ว → QR จางลง (class cancelled) และไม่มีปุ่มบันทึก/พิมพ์ / no-print = ไม่ออกตอนพิมพ์
   document.getElementById('item-view').innerHTML = `
     ${isNew ? `<div class="success-head">
         <div class="check-circle">${icon('check')}</div>

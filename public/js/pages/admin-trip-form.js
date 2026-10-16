@@ -1,9 +1,13 @@
 // เพิ่ม/แก้ไขรอบการเดินรถ → CALL api_trips_form / api_trips_save (ตรวจรถ/คนขับชนเวลาใน SQL)
 MUT.page(async ({ me }) => {
   const { esc, options } = MUT;
-  const id = MUT.param('id');
+  const id = MUT.param('id');   // ว่าง = เพิ่มใหม่
   const isNew = !id;
+  // ชุดที่ 1 = รอบเดิม (เพิ่มใหม่ = ว่าง), ชุดที่ 2–4 = ตัวเลือก เส้นทาง / รถ / คนขับ
+  // (รถ = เฉพาะที่พร้อมใช้งาน / คนขับ = ตำแหน่งที่มีสิทธิ์ SC12 และสถานะ "ใช้งาน"
+  //  — รวมรถ/คนขับเดิมของรอบที่แก้ไขอยู่ด้วย แม้สถานะจะไม่พร้อมแล้ว)
   const [[trip], routes, vehicles, drivers] = await MUT.api('trips_form', { id });
+  // เพิ่มใหม่: วันที่จาก ?date= (มาจากหน้ารายการ) หรือวันนี้ / เส้นทางจาก ?route=
   const v = trip || { trip_date: MUT.param('date') || me.today, route_id: MUT.param('route') };
   const form = document.getElementById('trip-form');
   document.getElementById('form-title').textContent = isNew ? 'เพิ่มรอบการเดินรถ' : `แก้ไขรอบ ${id}`;
@@ -12,12 +16,13 @@ MUT.page(async ({ me }) => {
     document.getElementById('booked-note').innerHTML = `<div class="alert alert-info">รอบนี้มีการจองแล้ว ${esc(trip.booked_seats)} ที่นั่ง</div>`;
   }
 
+  // ตัวเลือกแสดงข้อมูลช่วยตัดสินใจ: เวลารวมของเส้นทาง / สถานะรถที่ไม่พร้อม / สถานะคนขับที่ไม่ใช่ "ใช้งาน"
   form.route_id.innerHTML = options(routes, 'route_id', (r) => `${r.route_name} (${r.total_minutes} นาที)`, v.route_id, '— เลือกเส้นทาง —');
   form.vehicle_id.innerHTML = options(vehicles, 'vehicle_id',
     (x) => `${x.plate_no} · ${x.type_name}${x.status !== 'พร้อมใช้งาน' ? ` (${x.status})` : ''}`, v.vehicle_id, '— เลือกรถ —');
   form.driver_id.innerHTML = options(drivers, 'user_id', (x) => `${x.name} (${x.position_name}${x.status && x.status !== 'ใช้งาน' ? ` · ${x.status}` : ''})`, v.driver_id, '— เลือกคนขับ —');
   form.trip_date.value = v.trip_date || '';
-  if (isNew) form.trip_date.min = me.today;
+  if (isNew) form.trip_date.min = me.today;   // รอบใหม่สร้างย้อนหลังไม่ได้
   form.depart_time.value = v.depart_time ? String(v.depart_time).slice(0, 5) : '';
   if (!isNew) {
     document.getElementById('status-field').hidden = false;
@@ -39,6 +44,7 @@ MUT.page(async ({ me }) => {
   [form.route_id, form.depart_time, form.vehicle_id].forEach((el) => el.addEventListener('input', sync));
   sync();
 
+  // บันทึก: api_trips_save ตรวจรถ/คนขับว่าไม่ชนเวลากับรอบอื่น → สำเร็จกลับหน้ารายการที่กรองวันของรอบนี้
   MUT.bindForm(form, async (data) => {
     const [[r]] = await MUT.api('trips_save', { ...data, id });
     MUT.go(`/admin/trips?date=${r.trip_date}`, 'success', r.message);

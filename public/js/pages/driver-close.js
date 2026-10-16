@@ -1,9 +1,14 @@
 // 9.4 ปิดงาน → CALL api_driver_close_info แล้ว CALL api_driver_close
+//
+// แสดงสรุปก่อนปิด: จำนวน Check-in + รายชื่อที่ยังไม่ Check-in (จะถูกบันทึกเป็น No Show)
+// ยืนยันแล้ว → รายการที่ยังไม่ Check-in เปลี่ยนเป็น No Show และรอบเปลี่ยนเป็น "เสร็จสิ้น" (ย้อนกลับไม่ได้)
 MUT.page(async () => {
   const { esc, fmtDate, fmtTime } = MUT;
   const id = MUT.param('id');
   const back = `/driver/trip?id=${encodeURIComponent(id)}`;
   document.getElementById('back-link').href = back;
+  // รอบที่ยังปิดไม่ได้ (เช่นยังไม่เริ่มเดินทาง / ปิดไปแล้ว) หลังบ้านตอบ 400 → กลับหน้ารอบพร้อมเหตุผล
+  // error อื่น (403/404) → ให้ MUT.page แสดงหน้า error ตามปกติ
   let data;
   try {
     data = await MUT.api('driver_close_info', { trip: id });
@@ -24,6 +29,7 @@ MUT.page(async () => {
           <td>${fmtTime(n.board_at)} ${esc(n.board_stop)}</td><td class="right">${n.seats}</td></tr>`).join('')}</tbody>
       </table></div>`;
 
+  // ปุ่มปิดงานปิดไว้ใน HTML จนกว่าสรุปจะโหลดเสร็จ (กันกดก่อนเห็นรายชื่อ No Show)
   const btn = document.getElementById('close-btn');
   btn.disabled = false;
   btn.addEventListener('click', async () => {

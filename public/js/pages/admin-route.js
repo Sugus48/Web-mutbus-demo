@@ -1,6 +1,9 @@
 // รายละเอียดเส้นทาง + Route diagram → CALL api_routes_get
+// แสดงลำดับจุดจอด 2 แบบ: diagram (เวลาสะสมจากต้นทาง) และตาราง (เวลาจากจุดก่อนหน้า + สะสม)
 MUT.page(async ({ can }) => {
   const { esc } = MUT;
+  // ชุดที่ 1 = เส้นทาง + ตัวเลขสรุป, ชุดที่ 2 = จุดจอดตามลำดับ
+  // travel_minutes = เวลาจากจุดก่อนหน้า / cum_minutes = เวลาสะสมจากต้นทาง
   const [[route], stops] = await MUT.api('routes_get', { id: MUT.param('id') });
   document.title = `เส้นทาง ${route.route_name} · BusBuddy`;
   document.getElementById('route-view').innerHTML = `

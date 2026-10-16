@@ -1,11 +1,15 @@
 // 10.12 การจอง → CALL api_bookings_list
+// ตัวกรองอยู่ใน URL (ฟอร์ม GET) — ค้นหา, ช่วงวันที่, สถานะ, เส้นทาง, รอบ (?trip= มาจากปุ่ม "การจอง" ในหน้ารอบ)
+// 1 แถว = 1 รายการจอง (การจอง 1 ครั้งมีได้หลายรายการ) — คลิกรหัสการจองเพื่อดูรายละเอียด/จัดการ
 MUT.page(async () => {
   const { esc, fmtDate, fmtTime, fmtDateTime, badge, options } = MUT;
   const q = MUT.params();
+  // ชุดที่ 1 = รายการจองตามตัวกรอง, ชุดที่ 2 = เส้นทาง (ตัวเลือกในตัวกรอง)
   const [rows, routes] = await MUT.api('bookings_list', q);
   const form = document.getElementById('filter-form');
   for (const k of ['q', 'from', 'to', 'status', 'trip']) form[k].value = q[k] || '';
   form.route.innerHTML = options(routes, 'route_id', 'route_name', q.route, 'ทั้งหมด');
+  // กรองเฉพาะรอบ → แสดงป้ายบอก + ลิงก์ล้างตัวกรองนี้
   if (q.trip) {
     document.getElementById('trip-filter-note').innerHTML =
       `เฉพาะรอบ <span class="mono">${esc(q.trip)}</span> · <a href="/admin/bookings">ดูทั้งหมด</a>`;

@@ -6,7 +6,9 @@ MUT.page(async () => {
     { key: 'done', label: 'เสร็จแล้ว' },
     { key: 'cancelled', label: 'ยกเลิก' },
   ];
+  // แท็บจาก ?tab= (ค่าที่ไม่รู้จัก = กำลังจะถึง)
   const tab = TABS.some((t) => t.key === MUT.param('tab')) ? MUT.param('tab') : 'upcoming';
+  // โหลดทุกรายการครั้งเดียว — หลังบ้านบอกมาแล้วว่าแต่ละรายการอยู่แท็บไหน (r.tab) จึงนับจำนวนทุกแท็บได้เลย
   const [rows] = await MUT.api('my');
   const count = (k) => rows.filter((r) => r.tab === k).length;
 
@@ -21,6 +23,7 @@ MUT.page(async () => {
     return;
   }
   box.innerHTML = items.map((i, n) => {
+    // อยู่แท็บยกเลิกแต่รายการจองไม่ได้ถูกยกเลิก = รอบรถถูกยกเลิก (แสดงข้อความแยกให้รู้สาเหตุ)
     const tripCancelled = i.tab === 'cancelled' && i.status !== 'ยกเลิก';
     return `<article class="card trip-card">
       <div class="row-between"><strong>${esc(i.route_name)}</strong>${badge(tripCancelled ? 'ยกเลิก' : i.display_status)}</div>
@@ -39,6 +42,7 @@ MUT.page(async () => {
     </article>`;
   }).join('');
 
+  // ปุ่มยกเลิก (แสดงเมื่อหลังบ้านบอกว่ายังยกเลิกได้: can_cancel) → ใช้ฟังก์ชันร่วมใน my-booking.js
   box.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-cancel]');
     if (btn) MyBooking.cancel(items[Number(btn.dataset.cancel)], '/my?tab=cancelled');

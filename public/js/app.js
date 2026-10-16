@@ -3,10 +3,14 @@
 // - ฟังก์ชันจัดรูปแบบ, Badge, ไอคอน, Flash message, กล่องยืนยัน
 // - วาง layout (แถบบน/เมนูล่าง/เมนูข้างหลังบ้าน) ตาม <body data-layout="user|driver|admin|auth">
 // - page(fn): เริ่มหน้า — โหลดผู้ใช้ที่ login แล้วเรียก fn({ me, can, hasScreen })
+//
+// ทุกหน้าโหลดไฟล์นี้ก่อน แล้วตามด้วย js/pages/<ชื่อหน้า>.js ซึ่งเรียก MUT.page(async (ctx) => { ... })
+// ทุกอย่างอยู่ใน IIFE (function () { ... })() เพื่อไม่ให้ตัวแปรรั่วไปเป็น global — เปิดให้ใช้เฉพาะผ่าน window.MUT
 (function () {
   'use strict';
 
   // ---------- เรียกหลังบ้าน ----------
+  // error จากหลังบ้าน: status = HTTP status (0 = ต่อ server ไม่ได้), field = ชื่อช่องในฟอร์มที่ผิด (ถ้ามี)
   class ApiError extends Error {
     constructor(status, message, field) {
       super(message);
@@ -15,6 +19,9 @@
     }
   }
 
+  // POST JSON ไป server.js (ส่ง cookie session ไปด้วย)
+  // - ต่อไม่ได้ → ApiError(0) / ยังไม่ login หรือบัญชีถูกปิด (401) → ไปหน้า login พร้อม ?next= กลับมาหน้าเดิม
+  // - HTTP ไม่ใช่ 2xx → ApiError พร้อมข้อความจากหลังบ้าน
   async function post(url, data) {
     let res;
     try {
@@ -48,6 +55,7 @@
   const pad2 = (n) => String(n).padStart(2, '0');
   const DAY_NAMES = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
 
+  // escape HTML — ใช้กับทุกค่าที่มาจากผู้ใช้/ฐานข้อมูลก่อนใส่ใน innerHTML (กัน XSS)
   function esc(s) {
     return String(s ?? '')
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -66,14 +74,15 @@
     return m ? `${m[1]}:${m[2]}` : String(v);
   }
   const fmtDateTime = (v) => (v ? `${fmtDate(v)} ${fmtTime(v)}` : '-');
-  const fmtNum = (v) => (typeof v === 'number' ? v.toLocaleString('th-TH') : v);
+  const fmtNum = (v) => (typeof v === 'number' ? v.toLocaleString('th-TH') : v);   // 1234 → '1,234'
 
-  // เพิ่มนาทีให้เวลา 'HH:MM' → 'HH:MM'
+  // เพิ่มนาทีให้เวลา 'HH:MM' → 'HH:MM' (เกินเที่ยงคืนวนกลับ 00:xx)
   function addMinutes(time, minutes) {
     const [h, m] = String(time).split(':').map(Number);
     const total = h * 60 + m + Number(minutes || 0);
     return `${pad2(Math.floor(total / 60) % 24)}:${pad2(total % 60)}`;
   }
+  // '2026-09-24' → 'พฤหัสบดี' (ใส่ T00:00:00 = เวลาท้องถิ่น ไม่เลื่อนวันจาก timezone)
   const dayName = (date) => DAY_NAMES[new Date(`${String(date).slice(0, 10)}T00:00:00`).getDay()];
 
   // สถานะ → สี Badge (ข้อความแสดงคู่กับสีเสมอ)
@@ -96,10 +105,12 @@
     const s = p.toString();
     return s ? `?${s}` : '';
   }
+  // อ่าน query string ของหน้าปัจจุบัน: param('id') → ค่าเดียว / params() → { ทุกค่า }
   const param = (name) => new URLSearchParams(location.search).get(name) || '';
   const params = () => Object.fromEntries(new URLSearchParams(location.search));
 
   // ---------- ไอคอน ----------
+  // เส้น SVG ขนาด 24×24 — icon('home') คืน <svg> ที่ใช้สีตามข้อความ (currentColor)
   const ICONS = {
     home: '<path d="M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
@@ -118,6 +129,8 @@
   const icon = (name) => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
   // ---------- Flash message (ข้อความแจ้งผลที่แสดงในหน้าถัดไป) ----------
+  // เก็บใน sessionStorage ก่อนเปลี่ยนหน้า → page() ของหน้าถัดไปอ่าน (takeFlash) แล้วลบทิ้ง = แสดงครั้งเดียว
+  // ครอบ try/catch เพราะ storage อาจใช้ไม่ได้ (เช่นโหมดส่วนตัว) — แค่ไม่แสดงข้อความ ไม่ทำให้หน้าพัง
   function setFlash(type, msg) {
     try { sessionStorage.setItem('mut-flash', JSON.stringify({ type, msg })); } catch (e) { /* ignore */ }
   }
@@ -148,6 +161,9 @@
   }
 
   // ---------- กล่องยืนยัน ----------
+  // ใช้ <dialog> ของเบราว์เซอร์ (สร้างครั้งแรกแล้วใช้ซ้ำ) — await confirmBox({...}) → true เมื่อกดปุ่มยืนยัน
+  // ปุ่มอยู่ใน <form method="dialog"> กดแล้ว dialog ปิดเองและ returnValue = value ของปุ่ม (ok / cancel)
+  // tone: danger = ปุ่มสีแดง (ลบ/ยกเลิก) / primary = ปุ่มสีหลัก
   function confirmBox({ title = 'ยืนยันการทำรายการ', message = '', ok = 'ยืนยัน', tone = 'danger' } = {}) {
     let dialog = document.getElementById('confirm-dialog');
     if (!dialog) {
@@ -175,6 +191,7 @@
 
   // ---------- ฟอร์ม ----------
   // อ่านค่าฟอร์มเป็น object (checkbox ที่ไม่ติ๊ก = '0')
+  // ช่องที่ disabled ไม่ถูกส่ง → หลังบ้านถือว่า "คงค่าเดิม" / radio ส่งเฉพาะตัวที่เลือก
   function formData(form) {
     const data = {};
     for (const el of form.elements) {
@@ -184,6 +201,7 @@
     }
     return data;
   }
+  // ล้าง error เดิมทั้งหมดในฟอร์ม (ก่อนส่งใหม่)
   function clearErrors(form) {
     form.querySelectorAll('.is-invalid').forEach((el) => { el.classList.remove('is-invalid'); el.removeAttribute('aria-invalid'); });
     form.querySelectorAll('.error-text[data-auto]').forEach((el) => el.remove());
@@ -191,6 +209,8 @@
     if (top) top.innerHTML = '';
   }
   // แสดง error ใต้ช่องที่ผิด (ไม่พบช่อง → แสดงด้านบนของฟอร์ม)
+  // err.field มาจากข้อความ 'ช่อง|ข้อความ' ของ procedure / data-error-for="ช่อง" = จุดวาง error ของกลุ่มช่องที่ไม่มี input ชื่อนั้นตรงๆ
+  // เลื่อน focus ไปช่องที่ผิดให้ผู้ใช้แก้ได้ทันที
   function showError(form, err) {
     const input = err.field && form.querySelector(`[name="${err.field}"]`);
     const anchor = err.field && form.querySelector(`[data-error-for="${err.field}"]`);
@@ -220,6 +240,8 @@
       el.removeAttribute('aria-invalid');
       el.closest('.field')?.querySelector('.error-text[data-auto]')?.remove();
     });
+    // ส่งฟอร์ม: ไม่โหลดหน้าใหม่ → ปิดปุ่มกันกดซ้ำ → onSubmit → error จากหลังบ้านแสดงในฟอร์ม → คืนปุ่ม
+    // error อื่นที่ไม่ใช่ ApiError = bug ในโค้ด → ปล่อยให้เห็นใน console
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       clearErrors(form);
@@ -237,6 +259,8 @@
     });
   }
   // ตัวเลือก <option>
+  // options(แถว, คอลัมน์ value, คอลัมน์ข้อความ, ค่าที่เลือก, ข้อความตัวเลือกว่าง) — value/label เป็นฟังก์ชันได้
+  // placeholder ไม่ส่งมา = ไม่มีตัวเลือกว่าง
   const options = (rows, value, label, selected, placeholder) =>
     (placeholder !== undefined ? `<option value="">${esc(placeholder)}</option>` : '')
     + rows.map((r) => {
@@ -245,7 +269,7 @@
       return `<option value="${esc(v)}" ${String(v) === String(selected ?? '') ? 'selected' : ''}>${esc(l)}</option>`;
     }).join('');
 
-  // ปุ่มแสดง/ซ่อนรหัสผ่าน
+  // ปุ่มแสดง/ซ่อนรหัสผ่าน — <button data-toggle-password="id ของช่อง"> ใช้ได้ทุกหน้าโดยไม่ต้องเขียนเพิ่ม
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-toggle-password]');
     if (!btn) return;
@@ -257,6 +281,7 @@
   });
 
   // ---------- Layout ----------
+  // เมนูหลังบ้าน: screen = รหัสหน้าจอที่ต้องมีสิทธิ์จึงจะเห็นเมนู / match = path อื่นที่นับเป็นเมนูนี้ (เช่นหน้าฟอร์ม)
   const ADMIN_MENU = [
     { group: 'ข้อมูลหลัก', items: [
       { label: 'ผู้ใช้งาน / พนักงาน', href: '/admin/users', screen: 'SC07', match: ['/admin/user'] },
@@ -279,6 +304,7 @@
     { group: 'รายงาน', items: [{ label: 'รายงาน', href: '/admin/reports', screen: 'SC11' }] },
   ];
 
+  // path ปัจจุบันแบบไม่มี .html / index ('/admin/index.html' → '/admin/') ใช้ไฮไลต์เมนูที่เปิดอยู่
   const path = location.pathname.replace(/\.html$/, '').replace(/\/index$/, '/');
   const current = (cond) => (cond ? 'aria-current="page"' : '');
 
@@ -287,11 +313,13 @@
   document.head.insertAdjacentHTML('beforeend',
     '<link rel="icon" type="image/png" href="/img/favicon.png"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png">');
 
+  // แถบเมนูล่าง (มือถือ) — tabs: [{ href, label, icon, match = เมนูนี้เปิดอยู่ไหม }]
   function tabbar(label, tabs) {
     return `<nav class="tabbar" aria-label="${label}"><div class="tabbar-inner">${tabs.map((t) =>
       `<a href="${t.href}" ${current(t.match)}>${icon(t.icon)}<span>${t.label}</span></a>`).join('')}</div></nav>`;
   }
 
+  // ผู้โดยสาร: แถบบน (+ ลิงก์ไปงานคนขับ/หลังบ้าน ถ้ามีสิทธิ์) และเมนูล่าง ครอบ <main>
   function layoutUser(me) {
     const header = `<header class="topbar"><div class="topbar-inner">
         <a class="brand" href="/">${LOGO} BusBuddy</a><span class="spacer"></span>
@@ -330,6 +358,8 @@
     main.insertAdjacentHTML('afterend', nav);
   }
 
+  // หลังบ้าน: sidebar (แสดงเฉพาะเมนูที่ตำแหน่งมีสิทธิ์ / กลุ่มที่ไม่เหลือเมนูถูกซ่อนทั้งกลุ่ม) + แถบบน
+  // ย้าย <main> เดิมเข้าไปอยู่ใน .admin-main
   function layoutAdmin(me, perms) {
     const menu = ADMIN_MENU.map((g) => {
       const items = g.items.filter((i) => perms[i.screen]);
@@ -381,6 +411,7 @@
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root.classList.contains('menu-open')) setOpen(false); });
   }
 
+  // หน้า login/register: การ์ดกลางจอพร้อมโลโก้ ครอบ <main>
   function layoutAuth() {
     const main = document.getElementById('main');
     const wrap = document.createElement('div');
@@ -393,7 +424,7 @@
     wrap.querySelector('.auth-card').appendChild(main);
   }
 
-  // ออกจากระบบ
+  // ออกจากระบบ — ปุ่มใดก็ได้ที่มี data-logout
   async function logout() {
     const body = await post('/api/logout');
     location.href = body.redirect || '/login';
@@ -401,6 +432,7 @@
   document.addEventListener('click', (e) => { if (e.target.closest('[data-logout]')) logout(); });
 
   // ---------- หน้าแสดงข้อผิดพลาด ----------
+  // แทนเนื้อหาทั้งหน้าด้วยข้อความ error (403 ไม่มีสิทธิ์ / 404 ไม่พบ / อื่นๆ)
   function errorView(err) {
     const main = document.getElementById('main');
     const views = {
@@ -425,6 +457,9 @@
   const readMode = () => { try { return sessionStorage.getItem(MODE_KEY); } catch (e) { return null; } };
   const saveMode = (m) => { try { sessionStorage.setItem(MODE_KEY, m); } catch (e) { /* ignore */ } };
 
+  // ลำดับ: วาง layout → (ไม่ใช่หน้า auth) เรียก api_me เอาผู้ใช้ + สิทธิ์ → แสดง flash → เรียกโค้ดของหน้า (fn)
+  // error ใดๆ ใน fn (รวม throw new ApiError(403, ...)) → แสดงหน้า error แทน
+  // aria-busy = บอก screen reader ว่ากำลังโหลด
   async function page(fn) {
     let kind = document.body.dataset.layout || 'user';
     const main = document.getElementById('main');
@@ -436,8 +471,10 @@
       if (kind === 'auth') {
         layoutAuth();
       } else {
+        // api_me: ชุดที่ 1 = ผู้ใช้, ชุดที่ 2 = สิทธิ์ต่อหน้าจอของตำแหน่ง (ไม่มีแถว = ไม่มีสิทธิ์เข้าหน้าจอนั้น)
         const [[me], permRows] = await api('me');
         if (!me) { await logout(); return; }
+        // { SC07: { add: true, edit: true, delete: false }, ... }
         const perms = {};
         for (const r of permRows) perms[r.screen_id] = { add: !!r.can_add, edit: !!r.can_edit, delete: !!r.can_delete };
         me.is_driver = !!Number(me.is_driver);
@@ -464,6 +501,7 @@
     }
   }
 
+  // ฟังก์ชันที่หน้าอื่นใช้ได้ผ่าน MUT.xxx
   window.MUT = {
     api, post, ApiError, page, go, flash, setFlash, confirmBox, bindForm, formData, clearErrors, showError, options,
     esc, fmtDate, fmtTime, fmtDateTime, fmtNum, addMinutes, dayName, DAY_NAMES, badge, qs, param, params, icon, errorView,

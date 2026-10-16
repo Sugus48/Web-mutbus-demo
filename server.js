@@ -45,6 +45,7 @@ function toError(err) {
     4025: 'ข้อมูลไม่ผ่านเงื่อนไขที่กำหนด',
   };
   if (known[err.errno]) return { status: 400, error: known[err.errno] };
+  // error อื่นที่ไม่รู้จัก → log ไว้ดูใน console แต่ไม่ส่งรายละเอียดทางเทคนิคให้หน้าเว็บ
   console.error(err);
   if (['ECONNREFUSED', 'ER_ACCESS_DENIED_ERROR', 'ER_BAD_DB_ERROR', 'ETIMEDOUT', 'ENOTFOUND', 'EHOSTUNREACH'].includes(err.code)) {
     return { status: 500, error: 'เชื่อมต่อฐานข้อมูลไม่ได้ — ตรวจสอบว่าฐานข้อมูลเปิดอยู่ และค่าในไฟล์ .env ถูกต้อง' };
@@ -55,13 +56,15 @@ function toError(err) {
   return { status: 500, error: 'เกิดข้อผิดพลาดของระบบ' };
 }
 
+// ส่ง error เป็น JSON — หน้าเว็บ (app.js) ใช้ field แสดง error ใต้ช่อง และ login พาไปหน้าเข้าสู่ระบบ
 const sendError = (res, err) => {
   const e = toError(err);
   res.status(e.status).json({ error: e.error, field: e.field || null, login: e.login || undefined });
 };
 
 const app = express();
-app.use(express.json({ limit: '100kb' }));
+app.use(express.json({ limit: '100kb' }));   // รับ body เป็น JSON (จำกัดขนาดกันส่งข้อมูลใหญ่เกิน)
+// session เก็บในหน่วยความจำของ server — เก็บแค่ uid ของผู้ที่ login (รีสตาร์ต server = ต้อง login ใหม่)
 app.use(session({
   name: 'mut_sid',
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
@@ -72,6 +75,7 @@ app.use(session({
 }));
 
 // เริ่ม session ใหม่ให้ผู้ใช้
+// regenerate = ออก session id ใหม่หลัง login กัน session fixation (ใช้ id เดิมที่ผู้อื่นอาจรู้)
 function signIn(req, user) {
   return new Promise((ok, fail) => req.session.regenerate((e) => {
     if (e) return fail(e);
@@ -80,8 +84,10 @@ function signIn(req, user) {
   }));
 }
 
+// ?next= หลัง login รับเฉพาะ path ภายในเว็บนี้ (/xxx) — กัน open redirect ไปเว็บอื่น (//evil.com)
 const safeNext = (n) => (typeof n === 'string' && n.startsWith('/') && !n.startsWith('//') ? n : null);
 
+// เข้าสู่ระบบ: sp_login ตรวจ username/password/สถานะบัญชี แล้วคืนผู้ใช้ + หน้าแรกตามบทบาท (landing)
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password, next } = req.body || {};
@@ -100,6 +106,7 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// สมัครสมาชิก (ผู้ใช้ทั่วไป/นักศึกษา) → login ให้ทันที
 app.post('/api/register', async (req, res) => {
   try {
     const b = req.body || {};
@@ -118,6 +125,7 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
+// แปลงค่าจาก JSON เป็นพารามิเตอร์ของ procedure (ส่งเป็นข้อความทั้งหมด ให้ procedure แปลงชนิดเอง)
 const toArg = (v) => {
   if (v === undefined || v === null) return null;
   if (typeof v === 'boolean') return v ? '1' : '0';
@@ -125,6 +133,11 @@ const toArg = (v) => {
   return String(v);
 };
 
+// API ทั่วไป: POST /api/trips_save { id, route_id, ... } → CALL api_trips_save(uid จาก session, id, route_id, ...)
+// - ชื่อ procedure ต้องเป็น a-z 0-9 _ เท่านั้น (กัน SQL injection ผ่านชื่อ)
+// - p_uid มาจาก session เสมอ — หน้าเว็บส่ง uid ปลอมมาไม่ได้
+// - การตรวจสิทธิ์ทำใน procedure (sp_require) ไม่ใช่ที่นี่
+// - ผลลัพธ์ = { sets: [[แถว...], [แถว...]] } ตามจำนวน SELECT ใน procedure
 app.post('/api/:name', async (req, res) => {
   const proc = `api_${String(req.params.name).toLowerCase()}`;
   if (!/^api_[a-z0-9_]+$/.test(proc)) return res.status(404).json({ error: 'ไม่พบ API' });
@@ -162,6 +175,7 @@ function ensureTrips() {
     .catch((err) => console.error('สร้างรอบการเดินรถจากตารางเวลาไม่สำเร็จ:', toError(err).error));
 }
 
+// เปิด server — unref() = timer นี้ไม่กันโปรแกรมปิดตัว
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
   console.log(`BusBuddy running at http://localhost:${port}`);

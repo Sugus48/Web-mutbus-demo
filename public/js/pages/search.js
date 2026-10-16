@@ -1,4 +1,10 @@
 // 7.2 ค้นหารอบรถ → CALL api_search_form / api_search
+//
+// ลำดับการทำงาน
+//   1. api_search_form: จุดจอดทั้งหมด, จุดจอดของแต่ละเส้นทาง (ตามลำดับ), ช่วงวันที่ที่จองได้
+//   2. เติมตัวเลือก + ค่าจาก URL (กลับมาจากหน้าอื่นแล้วยังเห็นเงื่อนไขเดิม)
+//   3. เลือกจุดขึ้นแล้ว จุดลงที่เลือกได้ = จุดที่อยู่ "หลัง" จุดขึ้นในเส้นทางใดเส้นทางหนึ่ง
+//   4. กดค้นหา → api_search → วาดการ์ดรอบรถ (ไม่โหลดหน้าใหม่ แต่บันทึกเงื่อนไขลง URL)
 MUT.page(async () => {
   const { esc, fmtDate, fmtTime, badge, qs, options } = MUT;
   const form = document.getElementById('search-form');
@@ -11,12 +17,16 @@ MUT.page(async () => {
   const q = MUT.params();
   board.innerHTML = options(stops, 'stop_id', 'stop_name', q.board, '— เลือกจุดขึ้น —');
   alight.innerHTML = options(stops, 'stop_id', 'stop_name', q.alight, '— เลือกจุดลง —');
+  // ปฏิทินเลือกได้เฉพาะวันที่หลังบ้านอนุญาต (ค่าเริ่มต้น = วันแรกที่จองได้)
   date.min = range.min_date;
   date.max = range.max_date;
   date.value = q.date || range.min_date;
+  // รหัสจุดจอด → ชื่อ (ไม่พบ = แสดงรหัส)
   const stopName = (id) => (stops.find((s) => s.stop_id === id) || {}).stop_name || id;
 
   // จำกัดตัวเลือกจุดลงให้อยู่หลังจุดขึ้นในเส้นทางใดเส้นทางหนึ่ง
+  // sequences = { R001: ['S01', 'S02', ...] } ลำดับจุดจอดของแต่ละเส้นทาง
+  // จุดลงที่ใช้ไม่ได้ถูก disabled (ไม่ซ่อน) / จุดลงเดิมใช้ไม่ได้แล้ว → ล้างค่า
   const sequences = {};
   routeStops.forEach((r) => (sequences[r.route_id] ||= []).push(r.stop_id));
   function limitAlight() {
@@ -31,6 +41,8 @@ MUT.page(async () => {
   board.addEventListener('change', limitAlight);
   limitAlight();
 
+  // ค้นหาแล้ววาดผล — การ์ดละรอบ: เวลาถึงจุดขึ้น/ลง, ที่นั่งคงเหลือในช่วงนั้น, ปุ่มดูรายละเอียด/จอง
+  // ที่นั่งเต็ม → ปุ่มจองกดไม่ได้ / ไม่พบรอบในวันเสาร์–อาทิตย์ → บอกว่ารถให้บริการเฉพาะวันทำการ
   async function search(data) {
     const [rows] = await MUT.api('search', data);
     const day = MUT.dayName(data.date);
@@ -61,6 +73,8 @@ MUT.page(async () => {
       </section>`;
   }
 
+  // replaceState = เปลี่ยน URL โดยไม่โหลดหน้า → กด "ย้อนกลับ" จากหน้ารอบรถแล้วได้ผลค้นหาเดิม
+  // ค้นหาไม่สำเร็จ → ล้างผลเก่า แล้วโยน error ให้ bindForm แสดงในฟอร์ม
   MUT.bindForm(form, async (data) => {
     history.replaceState(null, '', '/search' + qs(data));
     try {

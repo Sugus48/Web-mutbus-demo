@@ -1,9 +1,11 @@
 // 7.1 หน้าหลัก → CALL api_home
 MUT.page(async ({ me }) => {
   const { esc, fmtDate, fmtTime, badge, icon } = MUT;
-  document.getElementById('user-name').textContent = me.name;
+  document.getElementById('user-name').textContent = me.name;   // textContent = ไม่ตีความเป็น HTML จึงไม่ต้อง esc
+  // api_home: ชุดที่ 1 = การเดินทางครั้งถัดไป (ไม่มี = แถวว่าง), ชุดที่ 2 = จำนวนการจองที่กำลังจะถึง
   const [[next], [count]] = await MUT.api('home');
   document.getElementById('upcoming-count').textContent = count.n;
+  // มีการเดินทางถัดไป → การ์ดสรุป + ปุ่มไปหน้า QR / ไม่มี → ข้อความชวนค้นหารอบรถ
   document.getElementById('next-trip').innerHTML = next ? `
     <article class="card trip-card">
       <div class="row-between"><strong>${esc(next.route_name)}</strong>${badge(next.display_status)}</div>

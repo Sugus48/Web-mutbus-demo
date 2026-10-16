@@ -1,8 +1,11 @@
 // 9.1 งานวันนี้ + งานที่จะถึงใน 7 วัน → CALL api_driver_today
+// แสดงเฉพาะรอบที่คนขับที่ login อยู่ได้รับมอบหมาย — แตะการ์ดเพื่อเปิดรายละเอียดรอบ (driver/trip)
 MUT.page(async ({ me }) => {
   const { esc, fmtDate, fmtTime, badge } = MUT;
+  // ชุดที่ 1 = รอบวันนี้, ชุดที่ 2 = รอบใน 7 วันข้างหน้า (เรียงตามวัน/เวลา)
   const [trips, upcoming] = await MUT.api('driver_today');
-  document.getElementById('today-info').textContent = `${fmtDate(me.today)} · ${trips.length} รอบ`;
+  document.getElementById('today-info').textContent = `${fmtDate(me.today)} · ${trips.length} รอบ`;   // me.today = วันที่ตามฐานข้อมูล
+  // คำอธิบายสถานะรอบในมุมคนขับ
   const SUB = { 'เปิด': 'รอเริ่มงาน', 'กำลังเดินทาง': 'กำลังเดินทาง', 'เสร็จสิ้น': 'ปิดงานแล้ว', 'ยกเลิก': 'รอบถูกยกเลิก' };
   const link = (t) => `/driver/trip?id=${encodeURIComponent(t.trip_id)}`;
 
@@ -22,6 +25,7 @@ MUT.page(async ({ me }) => {
         <div class="small muted mt-2">สถานะรอบ: ${esc(t.status)} (${SUB[t.status] || ''})</div>
       </a>`).join('');
 
+  // งานที่จะถึง: ใส่หัววันที่ทุกครั้งที่วันเปลี่ยน (ข้อมูลเรียงตามวันมาแล้ว)
   if (!upcoming.length) return;
   let lastDate = null;
   document.getElementById('upcoming-trips').innerHTML = '<h2 class="section-title mt-4">งานที่จะถึง (7 วัน)</h2>' + upcoming.map((t) => {

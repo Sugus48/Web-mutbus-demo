@@ -3,9 +3,18 @@
 //   รายการ → CALL api_<api>_list   ฟอร์มแก้ไข → CALL api_<api>_get
 //   บันทึก → CALL api_<api>_save   ลบ → CALL api_<api>_delete
 // URL: ?new=1 = ฟอร์มเพิ่ม / ?edit=<รหัส> = ฟอร์มแก้ไข / อื่นๆ = รายการ (+ ค่าตัวกรอง)
+//
+// การตั้งค่าของแต่ละหน้า (RESOURCES[ชื่อ]):
+//   title       ชื่อที่แสดง                   screen   รหัสหน้าจอที่ใช้ตรวจสิทธิ์ add/edit/delete
+//   api         ชื่อกลางของ procedure          pk       คอลัมน์รหัส (ใช้ในลิงก์แก้ไข/ลบ)
+//   search      มีช่องค้นหาไหม                 note     ข้อความอธิบายใต้หัวข้อ
+//   filters     ตัวกรองแบบ select              columns  คอลัมน์ตาราง (fmt = จัดรูปแบบเอง, badge = แสดงเป็นป้ายสถานะ)
+//   fields      ช่องในฟอร์ม (text/number/textarea/time/select)
+//   rowLinks    ปุ่มเพิ่มเติมในแต่ละแถว         nameOf / deleteWarning  ข้อความในกล่องยืนยันการลบ
 (function () {
   const { esc, fmtTime, badge } = MUT;
 
+  // ตัวเลือกคงที่ (ไม่ได้มาจากฐานข้อมูล) — run_days = เลขวันในสัปดาห์ 0 = อาทิตย์ … 6 = เสาร์
   const VEHICLE_STATUS = ['พร้อมใช้งาน', 'ซ่อมบำรุง', 'ไม่พร้อมใช้งาน'].map((s) => ({ value: s, label: s }));
   const RUN_DAYS = [
     { value: '12345', label: 'จันทร์–ศุกร์ (วันทำการ)' },
@@ -14,9 +23,11 @@
     { value: '06', label: 'เสาร์–อาทิตย์' },
   ];
   const ACTIVE = [{ value: '1', label: 'ใช้งาน' }, { value: '0', label: 'หยุดใช้งาน' }];
+  // '12345' → 'จันทร์–ศุกร์ (วันทำการ)' (ค่าที่ไม่อยู่ในรายการ = แสดงตามเดิม)
   const runDaysLabel = (v) => (RUN_DAYS.find((o) => o.value === String(v)) || { label: v }).label;
 
   // ตัวเลือกจาก api_lookups (lk = { types, routes, vehicles, drivers, ... })
+  // แปลงเป็นรูปแบบกลาง { value, label } ให้ตัวกรองและฟอร์มใช้ร่วมกัน
   const typeOptions = (lk) => lk.types.map((t) => ({ value: t.vehicle_type_id, label: `${t.type_name} (${t.seat_count} ที่นั่ง)` }));
   const routeOptions = (lk) => lk.routes.map((r) => ({ value: r.route_id, label: `${r.route_name} (${r.total_minutes} นาที)` }));
   const vehicleOptions = (lk) => lk.vehicles.map((v) => ({
@@ -164,12 +175,14 @@
     const [types, routes, vehicles, drivers, departments, positions, stops, screens] = await MUT.api('lookups');
     return { types, routes, vehicles, drivers, departments, positions, stops, screens };
   }
+  // โหลด lookups เฉพาะหน้าที่มีตัวกรองหรือช่อง select (หน้าอย่างแผนก/จุดจอดไม่ต้องเรียก)
   const needsLookups = (cfg) => (cfg.filters || []).length > 0 || cfg.fields.some((f) => f.type === 'select');
 
+  // HTML ของทุกหน้ามีทั้ง list-view และ form-view (ซ่อนไว้ทั้งคู่) — เลือกแสดงอันเดียวตาม URL
   MUT.page(async ({ can, hasScreen }) => {
     const listView = document.getElementById('list-view');
-    const cfg = RESOURCES[listView.dataset.resource];
-    const base = location.pathname.replace(/\.html$/, '');
+    const cfg = RESOURCES[listView.dataset.resource];   // <div id="list-view" data-resource="stops"> → RESOURCES.stops
+    const base = location.pathname.replace(/\.html$/, '');   // URL ของหน้ารายการ (ใช้กับลิงก์กลับ/ล้างตัวกรอง)
     const q = MUT.params();
     const lk = needsLookups(cfg) ? await loadLookups() : {};
     document.title = `${cfg.title} · BusBuddy`;
@@ -178,6 +191,7 @@
     else await showList();
 
     // ---------- รายการ ----------
+    // ตัวกรองทั้งหมด (q + filters) อยู่ใน URL ส่งตรงไป api_<api>_list
     async function showList() {
       const filters = (cfg.filters || []).map((f) => ({ ...f, opts: f.options(lk) }));
       const rowsData = await MUT.api(`${cfg.api}_list`, q).then((s) => s[0]);
@@ -191,6 +205,7 @@
         addBtn.textContent = `+ เพิ่ม${cfg.title}`;
       }
 
+      // สร้างฟอร์มตัวกรองจากการตั้งค่า (ฟอร์ม GET — กดค้นหา = โหลดหน้าใหม่พร้อมค่าใน URL)
       document.getElementById('filter-form').innerHTML = `
         ${cfg.search ? `<div class="field wide"><label for="q">ค้นหา</label>
           <input class="input" id="q" name="q" value="${esc(q.q || '')}" placeholder="รหัส หรือชื่อ"></div>` : ''}
@@ -198,6 +213,7 @@
           <select class="input" id="f-${f.name}" name="${f.name}">${MUT.options(f.opts, 'value', 'label', q[f.name], 'ทั้งหมด')}</select></div>`).join('')}
         <div class="btn-row"><button class="btn" type="submit">ค้นหา</button><a class="btn btn-ghost" href="${base}">ล้าง</a></div>`;
 
+      // คอลัมน์ "จัดการ" แสดงเมื่อมีปุ่มอย่างน้อย 1 ปุ่ม (rowLinks แสดงเฉพาะเมื่อเข้าหน้าปลายทางได้)
       const showActions = can(cfg.screen, 'edit') || can(cfg.screen, 'delete') || (cfg.rowLinks || []).length;
       const box = document.getElementById('rows');
       if (!rowsData.length) {
@@ -220,6 +236,8 @@
         </table></div>
         <p class="small muted mt-2">ทั้งหมด ${rowsData.length} รายการ</p>`;
 
+      // ลบ: ยืนยัน (ชื่อ + คำเตือนเฉพาะของหน้า) → api_<api>_delete → โหลดหน้าเดิม
+      // ข้อมูลที่ยังถูกใช้อยู่ หลังบ้านไม่ให้ลบ → แสดง error ด้านบน
       box.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-delete]');
         if (!btn) return;
@@ -241,6 +259,7 @@
     }
 
     // ---------- ฟอร์มเพิ่ม/แก้ไข ----------
+    // id = null → เพิ่มใหม่ (รหัสสร้างอัตโนมัติในหลังบ้าน) / มีค่า → โหลดค่าเดิมจาก api_<api>_get
     async function showForm(id) {
       const isNew = !id;
       if (!can(cfg.screen, isNew ? 'add' : 'edit')) throw new MUT.ApiError(403, 'ตำแหน่งของคุณไม่มีสิทธิ์ใช้งานส่วนนี้');
@@ -254,6 +273,8 @@
       document.getElementById('form-title').textContent = `${isNew ? 'เพิ่ม' : 'แก้ไข'}${cfg.title}${isNew ? '' : ` ${id}`}`;
       document.title = `${isNew ? 'เพิ่ม' : 'แก้ไข'}${cfg.title} · BusBuddy`;
 
+      // สร้างช่องกรอกจาก cfg.fields ตามชนิด — name ของช่อง = ชื่อพารามิเตอร์ของ api_<api>_save (ไม่มี p_)
+      // ช่องรหัสแสดงอย่างเดียว (ไม่มี name จึงไม่ถูกส่ง — id ส่งแยกตอนบันทึก)
       document.getElementById('form-fields').innerHTML = `
         <div class="field"><label>รหัส</label><input class="input mono" value="${esc(isNew ? 'สร้างอัตโนมัติ' : id)}" readonly></div>
         ${cfg.fields.map((f) => {
@@ -276,6 +297,7 @@
           </div>`;
         }).join('')}`;
 
+      // บันทึก: id ว่าง = เพิ่ม / มีค่า = แก้ไข → สำเร็จกลับหน้ารายการพร้อมข้อความ
       MUT.bindForm(document.getElementById('edit-form'), async (data) => {
         const [[res]] = await MUT.api(`${cfg.api}_save`, { ...data, id: id || '' });
         MUT.go(base, 'success', res.message);

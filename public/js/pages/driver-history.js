@@ -1,4 +1,6 @@
 // 9.5 ประวัติรอบที่ขับ → CALL api_driver_history
+// รอบของตัวเองที่ผ่านไปแล้ว หรือเสร็จสิ้น/ยกเลิกแล้ว — ใหม่สุดก่อน (หลังบ้านจำกัด 200 รอบ)
+// คลิกวันที่เพื่อเปิดรายละเอียดรอบ
 MUT.page(async () => {
   const { esc, fmtDate, fmtTime, badge } = MUT;
   const [trips] = await MUT.api('driver_history');

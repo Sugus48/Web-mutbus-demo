@@ -2,8 +2,9 @@
 // procedure คืนผลลัพธ์ด้วย DBMS_SQL.RETURN_RESULT → อ่านจาก result.implicitResults
 const oracledb = require('oracledb');
 
-oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT;
+oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT;   // แถว = object { COLUMN: ค่า } แทน array
 
+// สร้าง pool ครั้งแรกที่ใช้ (lazy) แล้วใช้ซ้ำ — สร้างไม่สำเร็จ → ล้างไว้ให้ลองใหม่รอบหน้า
 let poolPromise = null;
 function getPool() {
   poolPromise ||= oracledb.createPool({
@@ -17,12 +18,14 @@ function getPool() {
 }
 
 // DATE → ข้อความแบบเดียวกับ MySQL ('YYYY-MM-DD' สำหรับวันที่ / 'YYYY-MM-DD HH:MM:SS' สำหรับวันเวลา)
+// Oracle มีแค่ชนิด DATE (มีเวลาเสมอ) จึงต้องระบุชื่อคอลัมน์ที่เป็น "วันที่อย่างเดียว" เอง
 const DATE_ONLY = new Set(['trip_date', 'today', 'min_date', 'max_date', 'date_from', 'date_to']);
 const pad = (v) => String(v).padStart(2, '0');
 function fmtDate(d, key) {
   const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   return DATE_ONLY.has(key) ? date : `${date} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
+// แปลงแถว: ชื่อคอลัมน์เป็นตัวเล็ก (Oracle คืนตัวใหญ่) + วันที่เป็นข้อความ → หน้าเว็บใช้ได้เหมือน MySQL
 function convRow(row) {
   const out = {};
   for (const [k, v] of Object.entries(row)) {
@@ -33,6 +36,7 @@ function convRow(row) {
 }
 
 // error ของ Oracle → รูปแบบเดียวกับ MySQL (server.js แปลงเป็นข้อความต่อ)
+// ORA-00001 ซ้ำ → 1062 / ORA-02292 ลบแล้วติด FK → 1451 / ORA-02291 FK ไม่พบ → 1452 / CHECK, NOT NULL, ยาวเกิน → 3819
 const ERRNO = { 1: 1062, 2292: 1451, 2291: 1452, 2290: 3819, 1400: 3819, 12899: 3819 };
 function normalize(err) {
   if (!err || err.normalized) return err;
@@ -55,6 +59,7 @@ function normalize(err) {
   return err;
 }
 
+// ยืมการเชื่อมต่อจาก pool → ทำงาน → คืนเสมอ (finally) แม้เกิด error
 async function withConn(fn) {
   const pool = await getPool();
   const conn = await pool.getConnection();
@@ -68,6 +73,7 @@ async function withConn(fn) {
 }
 
 // เรียก procedure แล้วคืน result set ทั้งหมด: [[แถว...], [แถว...], ...]
+// ค่าส่งผ่าน bind :1, :2, ... (กัน SQL injection) / autoCommit = บันทึกทันทีหลัง procedure จบ
 const call = (name, args) => withConn(async (conn) => {
   const r = await conn.execute(
     `BEGIN ${name}(${args.map((_, i) => `:${i + 1}`).join(', ')}); END;`,

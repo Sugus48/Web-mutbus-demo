@@ -13,10 +13,15 @@ const GENERAL_ACCESS = [
   ['ดูหรือแก้ไขการจองของผู้อื่น', false],
 ];
 
+// ตาราง: แถว = หน้าจอ (SC01–SC12), คอลัมน์ = เข้าถึง / เพิ่ม / แก้ไข / ลบ ของตำแหน่งที่เลือก
+// สิทธิ์ที่บันทึกมีผลทันทีกับทุกคนในตำแหน่งนั้น (ทุก procedure ตรวจผ่าน sp_require / mut_can)
 MUT.page(async ({ hasScreen }) => {
   const { esc, options } = MUT;
   const general = MUT.param('position') === GENERAL_ROLE;
+  // ชุดที่ 1 = ตำแหน่งทั้งหมด, ชุดที่ 2 = ตำแหน่งที่เลือก (ไม่ระบุ = ตำแหน่งแรก) + editable,
+  // ชุดที่ 3 = หน้าจอทั้งหมด + สิทธิ์ของตำแหน่งนั้น (has_access = มีแถวในตาราง permissions)
   const [positions, [position], screens] = await MUT.api('permissions', { position: general ? null : MUT.param('position') });
+  // เปลี่ยนตำแหน่งใน dropdown = โหลดหน้าใหม่ด้วย ?position= (การแก้ที่ยังไม่บันทึกจะหายไป)
   const select = document.getElementById('position');
   const form = document.getElementById('matrix-form');
   select.innerHTML = `<optgroup label="บทบาทพื้นฐาน">
@@ -26,6 +31,7 @@ MUT.page(async ({ hasScreen }) => {
       general ? null : position?.position_id)}</optgroup>`;
   select.addEventListener('change', () => { location.href = `/admin/permissions?position=${encodeURIComponent(select.value)}`; });
 
+  // บทบาทผู้ใช้ทั่วไป: ซ่อนตาราง แล้วแสดงรายการ ได้/ไม่ได้ จาก GENERAL_ACCESS แทน
   if (general) {
     form.hidden = true;
     document.getElementById('general-role').hidden = false;
@@ -41,6 +47,7 @@ MUT.page(async ({ hasScreen }) => {
     return;
   }
 
+  // editable = ผู้ใช้มีสิทธิ์ SC10 "แก้ไข" — ไม่มี → ทุกช่อง disabled, ซ่อนปุ่มบันทึก, แสดงหมายเหตุ "ดูอย่างเดียว"
   const editable = !!Number(position.editable);
   document.getElementById('matrix-caption').textContent = `สิทธิ์ของตำแหน่ง ${position.position_name}`;
   document.getElementById('reset-btn').href = `/admin/permissions?position=${encodeURIComponent(position.position_id)}`;
@@ -81,6 +88,7 @@ MUT.page(async ({ hasScreen }) => {
   });
 
   // ส่งเป็นข้อความ 'SC01=1111;SC02=1000' (เข้าถึง เพิ่ม แก้ไข ลบ)
+  // หลังบ้านปฏิเสธถ้า: ถอดสิทธิ์จัดการสิทธิ์ (SC10) ของตำแหน่งตัวเอง หรือถอด SC12 ขณะที่คนในตำแหน่งยังมีงานขับค้าง
   MUT.bindForm(form, async () => {
     const matrix = [...tbody.querySelectorAll('tr')].map((row) => {
       const bit = (k) => (row.querySelector(`[data-flag=${k}]`)?.checked ? '1' : '0');
